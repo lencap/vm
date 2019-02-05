@@ -1,9 +1,13 @@
-## vm
-A minimalist VirtualBox machine manager. 
+# vmctl
+A minimalist Linux [CentOS](https://www.centos.org/) [VirtualBox](https://www.virtualbox.org/) virtual machine managing utility that substitutes [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html) to make the most commonly used commands easily accessible.
 
-## Usage
+# Prerequisites
+Tested on Apple macOS v10.14.2.
 
-### Usage shell output
+  * VirtualBox v6.0.0+
+  * Create OVA files using https://github.com/lencap/packer-virtualbox
+
+# Usage
 ```
 Simple CentOS VM Manager v2.2.5
 vm list                                               List all VMs
@@ -25,5 +29,5 @@ vm imgdel <imgName> [-f]                              Delete image. Force option
 vm imgimp <imgFile>                                   Import image. Make available to this program
 ```
 
-## Development notes
-To test run the program as soon as you clone the code or as you make changes you can use `python -m vm` from the root of the working directory.
+# Development notes
+Test run from root of working directory with: `python -m vm`
