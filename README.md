@@ -8,7 +8,7 @@ The `pacos` utility is used to create Linux CentOS images that `vm` can then use
 ## Prerequisites
 Tested on macos v10.15.2 with VirtualBox v6.1.0
 
-# Usage
+## Usage
 ```
 Simple CentOS VM Manager v2.2.5
 vm list                                               List all VMs
@@ -30,5 +30,5 @@ vm imgdel <imgName> [-f]                              Delete image. Force option
 vm imgimp <imgFile>                                   Import image. Make available to this program
 ```
 
-# Development Notes
+## Development Notes
 Test run with: `./vm`
