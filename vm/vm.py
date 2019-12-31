@@ -1544,32 +1544,6 @@ def genFile(code, filename, mode):
   return 0
 
 
-def house_keeping():
-  # Ensure these 2 essential directories exist
-  if not os.path.isdir(vmhome):
-    os.makedirs(vmhome)
-  if not os.path.isdir(vmhome + '/vmbin'):
-    os.makedirs(vmhome + '/vmbin')
-
-  # Generate essential files on every run to always keep them fresh
-  genFile("#02=>", vmprikey, 0600)
-  subprocess.call("ssh-keygen -f " + vmprikey + " -y > " + vmpubkey, shell=True)
-  genFile("#03=>", vmksconf, 0644)
-  genFile("#04=>", vmrootrc, 0644)
-  genFile("#05=>", vmpreprc, 0755)
-  genFile("#06=>", vmbootrc, 0755)
-
-  # Initialized VirtualBox. Note global variables
-  global vboxmgr, const, vbox
-  vboxmgr = VirtualBoxManager(None, None)  # Init mgr with default style/parameters
-  const   = vboxmgr.constants              # Constants handle
-  vbox    = vboxmgr.getVirtualBox()        # IVirtualBox handle
-  if int(vbox.APIVersion[0]) < 5:
-    print red2("Error. VirtualBox 5.0+ is required.")
-    sys.exit(1)
-  vbox.systemProperties.defaultMachineFolder = vmhome  # Keep all VirtualBox files in vmhome
-
-
 def parse_arguments(argv):
   # Define allowable command actions as a dictionary of anonymous functions. Note how we shift
   # argv by 2 when calling the command function so that running the program with:
@@ -1615,9 +1589,31 @@ def parse_arguments(argv):
 
 
 def main(args=None):
-  """ Main program """
 
-  house_keeping()
+  # Ensure these 2 essential directories exist
+  if not os.path.isdir(vmhome):
+    os.makedirs(vmhome)
+  if not os.path.isdir(vmhome + '/vmbin'):
+    os.makedirs(vmhome + '/vmbin')
+
+  # Generate essential files on every run to always keep them fresh
+  genFile("#02=>", vmprikey, 0600)
+  subprocess.call("ssh-keygen -f " + vmprikey + " -y > " + vmpubkey, shell=True)
+  genFile("#03=>", vmksconf, 0644)
+  genFile("#04=>", vmrootrc, 0644)
+  genFile("#05=>", vmpreprc, 0755)
+  genFile("#06=>", vmbootrc, 0755)
+
+  # Initialized VirtualBox. Note global variables
+  global vboxmgr, const, vbox
+  vboxmgr = VirtualBoxManager(None, None)  # Init mgr with default style/parameters
+  const   = vboxmgr.constants              # Constants handle
+  vbox    = vboxmgr.getVirtualBox()        # IVirtualBox handle
+  if int(vbox.APIVersion[0]) < 5:
+    print red2("Error. VirtualBox 5.0+ is required.")
+    sys.exit(1)
+  vbox.systemProperties.defaultMachineFolder = vmhome  # Keep all VirtualBox files in vmhome
+
   parse_arguments(sys.argv)
   sys.exit(0)
 
