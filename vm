@@ -1,6 +1,7 @@
-""" vm """
+#!/usr/bin/env python
+# vm
+# A simpler version of VBoxManage (Python version). Uses OVA files created with pacos.sh
 
-# Import required modules
 import sys
 import os
 import time
@@ -1612,7 +1613,7 @@ def main(args=None):
   if int(vbox.APIVersion[0]) < 5:
     print red2("Error. VirtualBox 5.0+ is required.")
     sys.exit(1)
-  vbox.systemProperties.defaultMachineFolder = vmhome  # Keep all VirtualBox files in vmhome
+  # vbox.systemProperties.defaultMachineFolder = vmhome  # Keep all VirtualBox files in vmhome
 
   parse_arguments(sys.argv)
   sys.exit(0)
@@ -1620,10 +1621,6 @@ def main(args=None):
   # Clean up and exit    
   del vboxmgr
   sys.exit(0)
-
-
-if __name__ == '__main__':
-  main()
 
 
 # DATA
