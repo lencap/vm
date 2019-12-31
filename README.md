@@ -1,11 +1,12 @@
-# vmctl
-A much simpler version of [VirtualBox](https://www.virtualbox.org/)'s CLI [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html) utility, to manage Linux [CentOS](https://www.centos.org/) virtual machines on macOS. It is also a minimalist version of Vagrant.
+# VirtualBox Tools
+Small utilities to better manage [VirtualBox](https://www.virtualbox.org/) [CentOS](https://www.centos.org/) virtual machines from the __macos__ command line.
 
-# Prerequisites
-Tested on Apple macOS v10.14.2.
+The `vm` utility is very similar to [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but way simpler. It's like having a dedicated Vagrant binary for only managing Linux CentOS VMs.
 
-  * Install VirtualBox v6.0.0+
-  * Create OVA files using https://github.com/lencap/packer-virtualbox
+The `pacos` utility is used to create Linux CentOS images that `vm` can then use. 
+
+## Prerequisites
+Tested on macos v10.15.2 with VirtualBox v6.1.0
 
 # Usage
 ```
@@ -29,4 +30,4 @@ vm ovadel <ova-name> [-f]                  Delete image. Force option
 ```
 
 # Development Notes
-Test run from root of working directory with: `python -m vm`
+Test run with: `./vm`
