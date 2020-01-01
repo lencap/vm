@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vm
-# A simpler version of VBoxManage (Python version). Uses OVA files created with pacos.sh
+# A simpler version of VBoxManage. Python version.
 
 import sys
 import os
@@ -17,17 +17,19 @@ try:
 except ImportError:
   from ConfigParser import ConfigParser  # For ver < 3.0
 
-# String colorization functions need to be defined as early as possible
+# Special functions, defined as early as possible
 def whi1 (s): s = str(s) ; return '\033[0;37m' + s + '\033[0m'
 def red2 (s): s = str(s) ; return '\033[1;31m' + s + '\033[0m'
 def yel2 (s): s = str(s) ; return '\033[1;33m' + s + '\033[0m'
+def Die (code, msg):
+  if msg != "": print(msg)
+  sys.exit(code)
 
 # Ensure vboxapi module is installed
 try:
   from vboxapi import VirtualBoxManager
 except ImportError:
-  print "Missing " + whi1('vboxapi') + " module. VirtualBox needs to be installed."
-  sys.exit(1)
+  Die(1, "Missing " + whi1('vboxapi') + " module. VirtualBox needs to be installed.")
 
 # Global variables
 prgVer    = 'v2.2.5'
@@ -50,24 +52,24 @@ vmpwd     = 'password'                     # WARNING: but convenient security
 
 def vmUsage():
   print "Simple CentOS VM Manager " + prgVer + "\n" + \
-    prgNameC + " list                                               List all VMs\n" + \
-    prgNameC + " create <vmName> <imgName>                          Create VM from image\n" + \
-    prgNameC + " del <vmName> [-f]                                  Delete VM. Force option\n" + \
-    prgNameC + " start <vmName> [-gui]                              Start VM. GUI option\n" + \
-    prgNameC + " stop <vmName> [-f]                                 Stop VM. Force option\n" + \
-    prgNameC + " ssh <vmName> [<command>]                           SSH into or optionally run command on VM\n" + \
-    prgNameC + " prov [init]                                        Provision VMs as per vmconf file. Use init to create basic file\n" + \
-    prgNameC + " info <vmName>                                      Dump VM details\n" + \
-    prgNameC + " mod <vmName> <cpus> [<memory>]                     Modify VM CPUs and memory. Memory defaults to 1024\n" + \
-    prgNameC + " ip <vmName> <ip>                                   Set VM IP address\n" + \
-    prgNameC + " netlist                                            List available networks\n" + \
-    prgNameC + " netadd <ip>                                        Create new network\n" + \
-    prgNameC + " netdel <vboxnetX>                                  Delete given network\n" + \
-    prgNameC + " imglist                                            List all available images\n" + \
+    prgNameC + " ls                                 List all VMs\n" + \
+    prgNameC + " create <vmName> <imgName>          Create VM from image\n" + \
+    prgNameC + " del    <vmName> [-f]               Delete VM. Force option\n" + \
+    prgNameC + " start  <vmName> [-gui]             Start VM. GUI option\n" + \
+    prgNameC + " stop   <vmName> [-f]               Stop VM. Force option\n" + \
+    prgNameC + " ssh    <vmName> [<command>]        SSH into or optionally run command on VM\n" + \
+    prgNameC + " prov   [init]                      Provision VMs as per vmconf file. Use init to create basic file\n" + \
+    prgNameC + " info   <vmName>                    Dump VM details\n" + \
+    prgNameC + " mod    <vmName> <cpus> [<memory>]  Modify VM CPUs and memory. Memory defaults to 1024\n" + \
+    prgNameC + " ip     <vmName> <ip>               Set VM IP address\n" + \
+    prgNameC + " netls                              List available networks\n" + \
+    prgNameC + " netadd <ip>                        Create new network\n" + \
+    prgNameC + " netdel <vboxnetX>                  Delete given network\n" + \
+    prgNameC + " imgls                                              List all available images\n" + \
     prgNameC + " imgcreate <imgName> <ISOfile|vmName> [-f1] [-f2]   Create new image from vmName or ISO. Force imgName|vmName options\n" + \
     prgNameC + " imgdel <imgName> [-f]                              Delete image. Force option\n" + \
     prgNameC + " imgimp <imgFile>                                   Import image. Make available to this program"
-  sys.exit(1)
+  Die(1, "")
 
 
 def dumpObj(obj):
@@ -1551,7 +1553,7 @@ def parse_arguments(argv):
   # 'vm ssh vmName hostname' will call the vmSSH function with args = ["vmName", "hostname"]
   action = {
     'usage':      lambda: vmUsage(),
-    'list':       lambda: vmList(),
+    'ls':         lambda: vmList(),
     'create':     lambda: vmCreate(argv[2:]),
     'del':        lambda: vmDelete(argv[2:]),
     'start':      lambda: vmStart(argv[2:]),
@@ -1561,10 +1563,10 @@ def parse_arguments(argv):
     'info':       lambda: vmInfo(argv[2:]),
     'mod':        lambda: vmMod(argv[2:]),
     'ip':         lambda: vmIp(argv[2:]),
-    'netlist':    lambda: vmNetList(),
+    'netls':      lambda: vmNetList(),
     'netadd':     lambda: vmNetAdd(argv[2:]),
     'netdel':     lambda: vmNetDel(argv[2:]),
-    'imglist':    lambda: vmImgList(),
+    'imgls':      lambda: vmImgList(),
     'imgcreate':  lambda: vmImgCreate(argv[2:]),
     'imgdel':     lambda: vmImgDel(argv[2:]),
     'imgimp':     lambda: vmImgImport(argv[2:]),
@@ -1573,8 +1575,9 @@ def parse_arguments(argv):
     cmd = "usage"
   else:
     cmd = argv[1]
+
   if cmd not in action:
-    cmd = "usage"
+    Die(1, "Command " + whi1(cmd) + " is not available.")
 
   # Run given command 
   try:
@@ -1611,16 +1614,15 @@ def main(args=None):
   const   = vboxmgr.constants              # Constants handle
   vbox    = vboxmgr.getVirtualBox()        # IVirtualBox handle
   if int(vbox.APIVersion[0]) < 5:
-    print red2("Error. VirtualBox 5.0+ is required.")
-    sys.exit(1)
+    Die(1, red2("Error. VirtualBox 5.0+ is required."))
   # vbox.systemProperties.defaultMachineFolder = vmhome  # Keep all VirtualBox files in vmhome
 
   parse_arguments(sys.argv)
-  sys.exit(0)
+  Die(0, "")
 
   # Clean up and exit    
   del vboxmgr
-  sys.exit(0)
+  Die(0, "")
 
 
 if __name__ == '__main__':
