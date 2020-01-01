@@ -6,7 +6,9 @@ Included here is the original Bash version or posterity.
 There's a __C__ language version being developed, to learn more about VirtualBox C Program bindings. See `c` folder.
 
 TODO:
-* Explain that specially packages OVAs are required, and what program to use (`pacos`?).
+* Say more about the `prov` command, which provisions one many VMs in the Vagrant style.
+* Say more about the networking of these OVA and how the utility uses them.
+* Explain that specially packaged OVAs are required, and what program to use (`pacos`?).
 * Ensure we're still using `$HOME/VirtualBox VMs` as `defaultMachineFolder`.
 
 ## Prerequisites
