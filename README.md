@@ -1,7 +1,7 @@
 # VirtualBox Tools
 A small utility to better manage [VirtualBox](https://www.virtualbox.org/) [CentOS](https://www.centos.org/) virtual machines from the __macos__ command line. This `vm` utility is very similar to [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but way simpler. It's like having a dedicated Vagrant program for only managing Linux CentOS VMs.
 
-All leaving around original Bash version for posterity.
+Also leaving around original Bash version for posterity.
 
 There is also a __C__ language version being developed, to learn more about VirtualBox C Program bindings. See [c folder](https://github.com/lencap/vboxtools/tree/master/c).
 
