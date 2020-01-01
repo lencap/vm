@@ -20,7 +20,7 @@ The prefered install method is to:
 
 `brew install lencap/tools/vm`
 
-but you can also do it locally with:
+but you can also install with:
 
 `make install`
 
