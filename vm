@@ -1571,8 +1571,7 @@ def main(args=None):
   vbox    = vboxmgr.getVirtualBox()        # IVirtualBox handle
   if int(vbox.APIVersion[0]) < 5:
     Die(1, red2("Error. VirtualBox 5.0+ is required."))
-  # vbox.systemProperties.defaultMachineFolder = vmhome  # Keep all VirtualBox files in vmhome
-  vbhome = vbox.systemProperties.defaultMachineFolder   # NO! Keep all VM files in default home!
+  vbhome = vbox.systemProperties.defaultMachineFolder
 
   # Parse arguments
   argv = sys.argv
