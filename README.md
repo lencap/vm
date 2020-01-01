@@ -7,7 +7,6 @@ There's a __C__ language version being developed, to learn more about VirtualBox
 
 TODO:
 * Explain that specially packages OVAs are required, and what program to use (`pacos`?).
-* Upgrade to Python3
 * Ensure we're still using `$HOME/VirtualBox VMs` as `defaultMachineFolder`.
 
 ## Prerequisites
