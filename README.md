@@ -1,9 +1,9 @@
 # VirtualBox Tools
-A small utility to better manage [VirtualBox](https://www.virtualbox.org/) [CentOS](https://www.centos.org/) virtual machines from the __macos__ command line. This `vm` utility is very similar to [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but way simpler. It's like having a dedicated Vagrant programm for only managing Linux CentOS VMs.
+A small utility to better manage [VirtualBox](https://www.virtualbox.org/) [CentOS](https://www.centos.org/) virtual machines from the __macos__ command line. This `vm` utility is very similar to [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but way simpler. It's like having a dedicated Vagrant program for only managing Linux CentOS VMs.
 
-Included here is the original Bash version or posterity.
+All leaving around original Bash version for posterity.
 
-There's a __C__ language version being developed, to learn more about VirtualBox C Program bindings. See `c` folder.
+There is also a __C__ language version being developed, to learn more about VirtualBox C Program bindings. See [c folder](https://github.com/lencap/vboxtools/tree/master/c).
 
 TODO:
 * Say how the utility aims to __not__ rely on VirtualBox Guest Addition, by using a small 1MB secondary disk to temporarily store the VM Name and IP address during during provisioning and to manage it.
@@ -16,13 +16,13 @@ TODO:
 Tested on macos v10.15.2 with VirtualBox v6.1.0
 
 ## Installation
-Either locally with:
-
-`make install`
-
-or with Homebrew:
+The prefered install method is to:
 
 `brew install lencap/tools/vm`
+
+but you can also do it locally with:
+
+`make install`
 
 ## Usage
 ```
