@@ -6,6 +6,7 @@ Included here is the original Bash version or posterity.
 There's a __C__ language version being developed, to learn more about VirtualBox C Program bindings. See `c` folder.
 
 TODO:
+* Say how the utility aims to __not__ rely on VirtualBox Guest Addition, by using a small 1MB secondary disk to temporarily store the VM Name and IP address during during provisioning and to manage it.
 * Say more about the `prov` command, which provisions one many VMs in the Vagrant style.
 * Say more about the networking of these OVA and how the utility uses them.
 * Explain that specially packaged OVAs are required, and what program to use (`pacos`?).
