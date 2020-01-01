@@ -11,12 +11,15 @@ import traceback
 import tarfile
 import re
 import socket
-from configparser import ConfigParser  # For ver > 3.0
+from configparser import ConfigParser
 
 # Special functions, defined as early as possible
-def whi1 (s): s = str(s) ; return '\033[0;37m' + s + '\033[0m'
-def red2 (s): s = str(s) ; return '\033[1;31m' + s + '\033[0m'
-def yel2 (s): s = str(s) ; return '\033[1;33m' + s + '\033[0m'
+def whi1 (s):
+  s = str(s) ; return '\033[0;37m' + s + '\033[0m'
+def red2 (s):
+  s = str(s) ; return '\033[1;31m' + s + '\033[0m'
+def yel2 (s):
+  s = str(s) ; return '\033[1;33m' + s + '\033[0m'
 def Die (code, msg):
   if msg != "": print(msg)
   sys.exit(code)
@@ -28,7 +31,7 @@ except ImportError:
   Die(1, "Missing " + whi1('vboxapi') + " module. VirtualBox needs to be installed.")
 
 # Global variables
-prgVer    = 'v2.2.5'
+prgVer    = 'v2.2.6'
 prgName   = 'vm'
 prgNameC  = whi1(prgName)
 vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
@@ -282,12 +285,12 @@ def vmCreate(args):
       VBoxValues[i] = '1024'
       continue
     if types[i] == 18 and onlyOneHdd:        # Set HardDiskImage path, and corresponding extraConfig
-      VBoxValues[i] = vmhome + '/' + vmName + '/' + vmName + "-disk1.vmdk"
+      VBoxValues[i] = vbhome + '/' + vmName + '/' + vmName + "-disk1.vmdk"
       extraConfigValues[i] = "controller=6;channel=0"
       onlyOneHdd = False
       continue
     elif types[i] == 18 and not onlyOneHdd:
-      VBoxValues[i] = vmhome + '/' + vmName + '/' + vmName + "-disk2.vmdk"
+      VBoxValues[i] = vbhome + '/' + vmName + '/' + vmName + "-disk2.vmdk"
       extraConfigValues[i] = "controller=6;channel=1"
     if types[i] == 21 and onlyOneNic:        # Set NetworkAdapter in slot 1 to NAT
       VBoxValues[i] = "6"
@@ -347,7 +350,7 @@ def vmCreate(args):
   return 0
 
 
-def  attachDisk2(vm):
+def attachDisk2(vm):
   # Create second 1MB HDD to facilitate VM bootstrapping
   # 1. Create RAW FAT32 disk2 : hdiutil create -size 1m "FilePath.dmg" -fs MS-DOS -volname VMCONF
   # 2. Mount it               : hdiutil attach "FilePath.dmg"
@@ -367,8 +370,8 @@ def  attachDisk2(vm):
     oldMedium.deleteStorage()
     closeSession(session)
 
-  vmDrvDmg = vmhome + '/' + vm.name + '/' + vm.name + '-disk2.dmg'
-  vmDrvVmdk = vmhome + '/' + vm.name + '/' + vm.name + '-disk2.vmdk'
+  vmDrvDmg = vbhome + '/' + vm.name + '/' + vm.name + '-disk2.dmg'
+  vmDrvVmdk = vbhome + '/' + vm.name + '/' + vm.name + '-disk2.vmdk'
   if os.path.isfile(vmDrvDmg):   # Remove old file if it exists
     os.remove(vmDrvDmg)
 
@@ -1423,7 +1426,7 @@ def vmImgCreate(args):
   nic1.bridgedInterface  = None
 
   # Create hdd/dvd media, and sets up storage controllers
-  location = vmhome + '/' + ksVMName + '/' + ksVMName + "-disk1.vmdk"
+  location = vbhome + '/' + ksVMName + '/' + ksVMName + "-disk1.vmdk"
   hddMedium = vbox.createMedium('VMDK', location, const.AccessMode_ReadWrite, const.DeviceType_HardDisk)
 
   # Create IMedium object for DVD
@@ -1562,13 +1565,14 @@ def main(args=None):
   genFile("#06=>", vmbootrc, 0o755)
 
   # Initialized VirtualBox. Note global variables
-  global vboxmgr, const, vbox
+  global vboxmgr, const, vbox, vbhome
   vboxmgr = VirtualBoxManager(None, None)  # Init mgr with default style/parameters
   const   = vboxmgr.constants              # Constants handle
   vbox    = vboxmgr.getVirtualBox()        # IVirtualBox handle
   if int(vbox.APIVersion[0]) < 5:
     Die(1, red2("Error. VirtualBox 5.0+ is required."))
   # vbox.systemProperties.defaultMachineFolder = vmhome  # Keep all VirtualBox files in vmhome
+  vbhome = vbox.systemProperties.defaultMachineFolder   # NO! Keep all VM files in default home!
 
   # Parse arguments
   argv = sys.argv
