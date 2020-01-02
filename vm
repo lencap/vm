@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vm
-# A simpler version of VBoxManage (Python version)
+# A simpler version of VBoxManage.
 
 import sys
 import os
@@ -49,7 +49,7 @@ vmpwd     = 'password'                     # WARNING: but convenient security
 
 
 def Usage():
-  p = prgName
+  p = whi1(prgName)
   print("""Simple CentOS VM Manager {}
 {} ls                                 List all VMs
 {} create <vmName> <imgName>          Create VM using imgName
