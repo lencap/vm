@@ -33,7 +33,6 @@ except ImportError:
 # Global variables
 prgVer    = 'v2.2.6'
 prgName   = 'vm'
-prgNameC  = whi1(prgName)
 vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
 vmprikey  = vmhome + '/vmbin/vmkey'        # Global private SSH key
 vmpubkey  = vmhome + '/vmbin/vmkey.pub'    # Global public SSH key
@@ -49,26 +48,26 @@ vmuser    = 'root'                         # WARNING: Be aware that this is poor
 vmpwd     = 'password'                     # WARNING: but convenient security
 
 
-def vmUsage():
-  p = prgNameC
+def Usage():
+  p = prgName
   print("""Simple CentOS VM Manager {}
 {} ls                                 List all VMs
-{} create <vmName> <imgName>          Create VM from image
-{} del    <vmName> [-f]               Delete VM. Force option
-{} start  <vmName> [-gui]             Start VM. GUI option
-{} stop   <vmName> [-f]               Stop VM. Force option
+{} create <vmName> <imgName>          Create VM using imgName
+{} del    <vmName> [-f]               Delete VM; force option
+{} start  <vmName> [-gui]             Start VM; GUI option
+{} stop   <vmName> [-f]               Stop VM; force option
 {} ssh    <vmName> [<command>]        SSH into or optionally run command on VM
-{} prov   [init]                      Provision VMs as per vmconf file. Use init to create basic file
+{} prov   [init]                      Provision VM(s) in vmconf file; init creates skeleton
 {} info   <vmName>                    Dump VM details
-{} mod    <vmName> <cpus> [<memory>]  Modify VM CPUs and memory. Memory defaults to 1024
+{} mod    <vmName> <cpus> [<mem>]     Modify VM CPUs and memory. Memory defaults to 1024
 {} ip     <vmName> <ip>               Set VM IP address
 {} netls                              List available networks
 {} netadd <ip>                        Create new network
 {} netdel <vboxnetX>                  Delete given network
-{} imgls                                              List all available images
-{} imgcreate <imgName> <ISOfile|vmName> [-f1] [-f2]   Create new image from vmName or ISO. Force imgName|vmName options
-{} imgdel <imgName> [-f]                              Delete image. Force option
-{} imgimp <imgFile>                                   Import image. Make available to this program""".format(prgVer, \
+{} imgls                              List all available images
+{} imgcreate <imgName> <vmName|ISO>   Create imgName from existing VM, or given ISO file or URL
+{} imgdel <imgName> [-f]              Delete image. Force option
+{} imgimp <imgFile>                   Import image. Make available to this program""".format(prgVer, \
   p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
   Die(1, "")
 
@@ -166,7 +165,7 @@ def setVmIp(vm, ip):
       newHOName = tmpHO.name
       break
   if newHOName == None:  # If not assigned by above loop, it means we have to create new vboxnet
-    newHOName = vmNetAdd([ipNet + '.1'])
+    newHOName = netAdd([ipNet + '.1'])
   (vmMuta, session) = openSession(vm, const.LockType_Write)
   # HostOnly uses NIC0 (with NAT) for routing external traffic (with no SSH port forwarding)
   nic0 = vmMuta.getNetworkAdapter(0)
@@ -847,7 +846,7 @@ def getNetList():
   return netList
 
 
-def vmNetList():
+def netList():
   netList = getNetList()
   if len(netList) == 0:
     return 0
@@ -863,7 +862,7 @@ def vmNetList():
   return 0
 
 
-def vmNetAdd(args):
+def netAdd(args):
   if len(args) != 1:
     print("Usage: vm netadd <gateway-ip>")
     return 1
@@ -886,7 +885,7 @@ def vmNetAdd(args):
   return newNet.name
 
 
-def vmNetDel(args):
+def netDelete(args):
   if len(args) != 1:
     print("Usage: vm netdel <vboxnetX>")
     return 1
@@ -1134,7 +1133,7 @@ def vmProvision(args):
   return 0
 
 
-def vmImgList():
+def imgList():
   fList = []
   for f in os.listdir(vmhome):
     if f.lower().endswith(".ova"):
@@ -1150,7 +1149,7 @@ def vmImgList():
   return 0
 
 
-def vmImgDel(args):
+def imgDelete(args):
   imgName = option = None
   if len(args) == 2:
     (imgName, option) = args
@@ -1173,7 +1172,7 @@ def vmImgDel(args):
   return 0
 
 
-def vmImgImport(args):
+def imgImport(args):
   imgFile = None
   if len(args) == 1:
     imgFile = args[0]
@@ -1205,7 +1204,7 @@ def vmImgImport(args):
   return 0
 
 
-def vmImgCreate(args):
+def imgCreate(args):
   imgName = source = option1 = option2 = None
   if len(args) == 4:
     (imgName, source, option1, option2) = args
@@ -1517,7 +1516,7 @@ def vmImgCreate(args):
 
   # Call this same function to create the OVA from the temp VM we just built
   print("\nCreating OVA %s" % imgName)
-  vmImgCreate([imgName, ksVMName, "-f1", "-f2"])
+  imgCreate([imgName, ksVMName, "-f1", "-f2"])
   vmDelete([ksVMName, "-f"])
   print("END   %s" % (time.strftime("%H:%M:%S", time.localtime())))
   return 0
@@ -1574,34 +1573,33 @@ def main(args=None):
   vbhome = vbox.systemProperties.defaultMachineFolder
 
   # Parse arguments
-  argv = sys.argv
-  # Define allowable command actions as a dictionary of anonymous functions. Note how we shift
-  # argv by 2 when calling the command function so that running the program with:
-  # 'vm ssh vmName hostname' will call the vmSSH function with args = ["vmName", "hostname"]
+  # Python has no switch/case option, so below 'action' switcher addresses that.  
+  # Note how we shift argv by 2 when calling the functions, to reduce remaining arguments.
   action = {
-    'usage':      lambda: vmUsage(),
+    'usage':      lambda: Usage(),
     'ls':         lambda: vmList(),
-    'create':     lambda: vmCreate(argv[2:]),
-    'del':        lambda: vmDelete(argv[2:]),
-    'start':      lambda: vmStart(argv[2:]),
-    'stop':       lambda: vmStop(argv[2:]),
-    'ssh':        lambda: vmSSH(argv[2:]),
-    'prov':       lambda: vmProvision(argv[2:]),
-    'info':       lambda: vmInfo(argv[2:]),
-    'mod':        lambda: vmMod(argv[2:]),
-    'ip':         lambda: vmIp(argv[2:]),
-    'netls':      lambda: vmNetList(),
-    'netadd':     lambda: vmNetAdd(argv[2:]),
-    'netdel':     lambda: vmNetDel(argv[2:]),
-    'imgls':      lambda: vmImgList(),
-    'imgcreate':  lambda: vmImgCreate(argv[2:]),
-    'imgdel':     lambda: vmImgDel(argv[2:]),
-    'imgimp':     lambda: vmImgImport(argv[2:]),
+    'create':     lambda: vmCreate(sys.argv[2:]),
+    'del':        lambda: vmDelete(sys.argv[2:]),
+    'start':      lambda: vmStart(sys.argv[2:]),
+    'stop':       lambda: vmStop(sys.argv[2:]),
+    'ssh':        lambda: vmSSH(sys.argv[2:]),
+    'prov':       lambda: vmProvision(sys.argv[2:]),
+    'info':       lambda: vmInfo(sys.argv[2:]),
+    'mod':        lambda: vmMod(sys.argv[2:]),
+    'ip':         lambda: vmIp(sys.argv[2:]),
+    'netls':      lambda: netList(),
+    'netadd':     lambda: netAdd(sys.argv[2:]),
+    'netdel':     lambda: netDelete(sys.argv[2:]),
+    'imgls':      lambda: imgList(),
+    'imgcreate':  lambda: imgCreate(sys.argv[2:]),
+    'imgdel':     lambda: imgDelete(sys.argv[2:]),
+    'imgimp':     lambda: imgImport(sys.argv[2:]),
   }
-  if len(argv) < 2:
+
+  if len(sys.argv) < 2:
     cmd = "usage"
   else:
-    cmd = argv[1]
+    cmd = sys.argv[1]
   if cmd not in action:
     Die(1, "Command " + whi1(cmd) + " is not available.")
 
