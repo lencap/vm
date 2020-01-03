@@ -11,6 +11,8 @@ import traceback
 import tarfile
 import re
 import socket
+import string
+import random
 from configparser import ConfigParser
 
 # Special functions, defined as early as possible
@@ -50,25 +52,25 @@ vmpwd     = 'password'                     # WARNING: but convenient security
 
 def Usage():
   p = whi1(prgName)
-  print("""Simple CentOS VM Manager {}
-{} ls                                 List all VMs
-{} create <vmName> <imgName>          Create VM using imgName
-{} del    <vmName> [-f]               Delete VM; force option
-{} start  <vmName> [-gui]             Start VM; GUI option
-{} stop   <vmName> [-f]               Stop VM; force option
-{} ssh    <vmName> [<command>]        SSH into or optionally run command on VM
-{} prov   [init]                      Provision VM(s) in vmconf file; init creates skeleton
-{} info   <vmName>                    Dump VM details
-{} mod    <vmName> <cpus> [<mem>]     Modify VM CPUs and memory. Memory defaults to 1024
-{} ip     <vmName> <ip>               Set VM IP address
-{} netls                              List available networks
-{} netadd <ip>                        Create new network
-{} netdel <vboxnetX>                  Delete given network
-{} imgls                              List all available images
-{} imgcreate <imgName> <vmName|ISO>   Create imgName from existing VM, or given ISO file or URL
-{} imgdel <imgName> [-f]              Delete image. Force option
-{} imgimp <imgFile>                   Import image. Make available to this program""".format(prgVer, \
-  p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+  print("Simple CentOS VM Manager {} \n"
+        "{} ls                                 List all VMs\n"
+        "{} create <vmName> <imgName>          Create VM using imgName\n"
+        "{} del    <vmName> [-f]               Delete VM; force option\n"
+        "{} start  <vmName> [-gui]             Start VM; GUI option\n"
+        "{} stop   <vmName> [-f]               Stop VM; force option\n"
+        "{} ssh    <vmName> [<command>]        SSH into or optionally run command on VM\n"
+        "{} prov   [init]                      Provision VM(s) in vmconf file; init creates skeleton\n"
+        "{} info   <vmName>                    Dump VM details\n"
+        "{} mod    <vmName> <cpus> [<mem>]     Modify VM CPUs and memory. Memory defaults to 1024\n"
+        "{} ip     <vmName> <ip>               Set VM IP address\n"
+        "{} netls                              List available networks\n"
+        "{} netadd <ip>                        Create new network\n"
+        "{} netdel <vboxnetX>                  Delete given network\n"
+        "{} imgls                              List all available images\n"
+        "{} imgcreate <imgName> <ISO|vmName>   Create imgName from ISO file or existing VM\n"
+        "{} imgdel <imgName> [-f]              Delete image. Force option\n"
+        "{} imgimp <imgFile>                   Import image. Make available to this program".format(prgVer,
+        p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
   Die(1, "")
 
 
@@ -1204,48 +1206,75 @@ def imgImport(args):
   return 0
 
 
-def imgCreate(args):
-  imgName = source = option1 = option2 = None
-  if len(args) == 4:
-    (imgName, source, option1, option2) = args
-  elif len(args) == 3:
-    (imgName, source, option1) = args
-    option2 = "normal"
-  elif len(args) == 2:
-    (imgName, source) = args
-    option1 = "normal"
-    option2 = "normal"
-  else:
-    print("Usage: vm imgcreate <imgName> <ISOfile|vmName> [-f1] [-f2]")
+def mountHybridISO(isoFile, isoMount):
+  # Evidently, this is the only way to mount a hybrid ISO on macos:
+  # 1. Capture last mounted disk device (/dev/disk1, etc)
+  # 2. Attach the ISO. Should attach to next available device.
+  # 3. Capture last mounted, and ensure it's not same one
+  # 4. Mount the device it's attached to, to the specified directory point
+  lastDisk1 = lastDisk2 = None
+  lastMounted = "diskutil list | awk '/^\/dev\/disk/ {print $1}' | sort | tail -1"
+  lastDisk1 = subprocess.check_output(lastMounted, shell=True).rstrip('\r\n')
+  attachISO = "hdiutil attach -quiet -noverify -nomount \"{}\" 2>&1".format(isoFile)
+  if subprocess.call(attachISO, shell=True) != 0:
+    print("Error running: {}".format(attachISO))
+    return ""
+  lastDisk2 = subprocess.check_output(lastMounted, shell=True).rstrip('\r\n')
+  if lastDisk1 == None or lastDisk1 == lastDisk2:
+    print("Error with 2nd run of: {}".format(lastMounted))
+    return ""
+  mountISO = "mount_cd9660 {} \"{}\"".format(lastDisk2, isoMount)
+  if subprocess.call(mountISO, shell=True) != 0:
+    print("Error running: {}".format(mountISO))
+    return ""
+  return lastDisk2
+
+
+def unmountHybridISO(isoMount, device):
+  # The only evident way to unmount a hybrid ISO on macos requires these 2 commands:
+  umountISO = "umount \"{}\" && diskutil eject {} > /dev/null 2>&1".format(isoMount, device)
+  if subprocess.call(umountISO, shell=True) != 0:
+    print("Error unmounting \"{}\"".format(isoFile))
+    return 1
+  return 0
+
+
+def imgCreateFromVM(imgName, imgSrc):
+  return 0
+
+def imgCreate(imgName, imgSrc):
+  # Detect if imgSrc ends with .iso and do ISO, assume anything else is a VM name
+  # ****************************** 
+  if imgName == "" or imgSrc == "":
+    print("Usage: vm imgcreate <imgName> <ISO|vmName>")
     return 1
 
   if not imgName.lower().endswith('.ova'):
-    print("imgName %s must end with .ova" % (whi1(imgName)))
+    print("imgName '{}' must end with .ova".format(imgName))
     return 1
 
   imgFile = vmhome + '/' + imgName
 
-  if os.path.isfile(imgFile) and option1 != "-f1" and option2 != "-f1": 
-    msg = "OVA " + whi1(imgName) + " already exists. Overwrite it? y/n "
-    response = raw_input(msg)
-    if response != 'y':
-      return 1
+  if os.path.isfile(imgFile): 
+    print("imgName '{}' already exists.".format(imgName))
+    return 1
 
   vmName = isoFile = None
   try:
-    vm = vbox.findMachine(source)  # Get the IMachine object (read-only)
-    vmName = source                # The source for this OVA will be this VM
+    vm = vbox.findMachine(imgSrc)  # Get the IMachine object (read-only)
+    vmName = imgSrc                # The source for this OVA will be this VM
   except:
-    if os.path.isfile(source) and source.lower().endswith('.iso'):
-      isoFile = source
+    if os.path.isfile(imgSrc) and imgSrc.lower().endswith('.iso'):
+      isoFile = imgSrc
     else:
-      print("Error: %s is not an existing VM, nor a valid ISO file" % red2(source))
+      print("Error: '{}' is not an existing VM, nor a valid ISO file".format(imgSrc))
       return 1
+  # By now we should know if imgSrc is either an existing VM or an ISO file    
 
-  # Create OVA from provided vmName, if it exists
-  if source == vmName:  # Note how after above try block we can know if source is either VM or ISO
+  # Create OVA from existing VM
+  if imgSrc == vmName:
     if option1 != '-f2' and option2 != '-f2': 
-      msg = "Did you run /usr/sbin/vmprep on " + whi1(vmName) + " yet? y/n "
+      msg = "Did you run /usr/sbin/vmprep on '{}' yet? y/n ".format(vmName)
       response = raw_input(msg)
       if response != 'y':
         return 1
@@ -1279,116 +1308,100 @@ def imgCreate(args):
 
     return 0
 
-  # Create OVA from a Kickstart installation of CentOS using given ISO file
-  if subprocess.check_output("file " + isoFile, shell=True).find('ISO') == -1:
-    print("%s is not an ISO file" % whi1(isoFile))
-    return 1
-
+  # Create OVA from given ISO file, doing a CentOS Kickstart install
+  # ========================================================================================
   from distutils import spawn
   mkisofs = spawn.find_executable("mkisofs")
   if mkisofs == None:
-    print(red2("Can't find ") + whi1("mkisofs") + red2(", which is required to \proceed. Note, this tool isn't native\n" + \
-          "to Mac OS X, so you'll need to install it with ") + whi1("brew install cdrtools") + red2(" or equivalent"))
+    print("Cannot find required 'mkisofs' binary. This tool is not native to macos,\n"
+          "and must be installed with 'brew install cdrtools' or equivalent.")
     return 1
 
-  print("Creating " + whi1(imgName) + " can take about 10 minutes depending on below activities\n" + \
-        "1. Remastering " + whi1(os.path.basename(isoFile)) + " for unattended install.\n" + \
-        "2. Building a temporary VM using the remastered ISO.\n" + \
-        "3. Creating the new OVA from that temporary VM.")
-  response = raw_input("Do you really want to proceed with all of this? y/n ")
+  print("Creating '{}' will take about 10 minutes depending on below activities\n"
+        "1. Remastering '{}' for an unattended install.\n"
+        "2. Building a temporary VM using the remastered ISO.\n"
+        "3. Creating the new OVA from that temporary VM.".format(imgName,
+        os.path.basename(isoFile)))
+  response = raw_input("Ready to proceed? y/n ")
   if response != "y":
     return 1
 
-  # Remove temp VM for doing KS build, if it exists
-  ksVMName = "tempvm"
-  try:
-    ksVM = vbox.findMachine(ksVMName)    # Get the IMachine object (read-only)
-    response = raw_input("A VM named " + whi1(ksVMName) + " already exists. Can we delete it? y/n ")
-    if response != 'y':
-      return 1
-    vmDelete([ksVMName, '-f'])
-  except:
-    dummyVar = True  # All's good, we can continue
-
+  # Generate a random name for Kickstart VM
+  ksVMName = ""
+  while not ksVMName:
+    ksVMName = "temp_" + ''.join([random.choice(string.ascii_letters + string.digits) for n in xrange(10)])
+    try:
+      ksVM = vbox.findMachine(ksVMName)  # Get the IMachine object (read-only)
+      ksVMName = ""
+      continue                           # Holy smoke! Seems like this VM already exists. Try again.
+    except:
+      break                              # Generated name will not clash with existing VMs
+ 
   print("START %s" % (time.strftime("%H:%M:%S", time.localtime())))
 
-  # Create isoFileKS var now so we can announce the process, but it's actually used later
+  # Define isoFileKS variable now so we can announce the process, but it's actually created later
   isoFileKS = vmhome + '/' + os.path.basename(isoFile)[:-4] + "-KS.iso"
-  print("Remastering original ISO into %s" % whi1(os.path.basename(isoFileKS)))
+  print("Remastering original ISO into {}".format(os.path.basename(isoFileKS)))
 
   # Create temp mount dir
-  isoMountDir = vmhome + '/' + "isomount"
-  if os.path.isdir(isoMountDir):
-    shutil.rmtree(isoMountDir)
-  os.makedirs(isoMountDir)   
+  isoMount = vmhome + '/' + "isomount"
+  if os.path.isdir(isoMount):    # Remove previous one, if still around for some reason
+    shutil.rmtree(isoMount)
+  os.makedirs(isoMount)   
 
-  # Mount ISO file
-  # CentOS 7 now uses hybrid ISO files, and 'hdiutil mount -quiet isoFile' no longer
-  # works on Mac OS X. So below is an ugly workaround to a much easier previous method:
-  lastDisk1 = lastDisk2 = None
-  lastDiskcmd = "diskutil list | grep '^/dev/disk' | sort | tail -1 | awk '{print $1}'"
-  lastDisk1 = subprocess.check_output(lastDiskcmd, shell=True).rstrip('\r\n')
-  cmdstr = "hdiutil attach -quiet -noverify -nomount \"" + isoFile + "\" 2>&1"
-  if subprocess.call(cmdstr, shell=True) != 0:
-    print("Error 1 pre-mounting " + isoFile)
-    return 1
-  lastDisk2 = subprocess.check_output(lastDiskcmd, shell=True).rstrip('\r\n')
-  if lastDisk1 == None or lastDisk1 == lastDisk2:
-    print("Error 2 pre-mounting " + isoFile)
-    return 1
-  cmdstr = "mount_cd9660 " + lastDisk2 + " \"" + isoMountDir + "\""
-  if subprocess.call(cmdstr, shell=True) != 0:
-    print("Error mounting " + isoFile)
+  # Mount ISO
+  device = mountHybridISO(isoFile, isoMount)
+  if device == "":
     return 1
 
   # Duplicate ISO content 
-  isoMountDirKS = isoMountDir + "KS"  # Temp dir for building ISO KS
-  if os.path.isdir(isoMountDirKS): shutil.rmtree(isoMountDirKS)  # Remove previous one
-  os.makedirs(isoMountDirKS)
-  cmdstr = "rsync -av \"" + isoMountDir + "/\" \"" + isoMountDirKS + "/\" > /dev/null 2>&1"
-  if subprocess.call(cmdstr, shell=True) != 0:
-    print("Error rsync'ing ISO content")
+  isoMountKS = isoMount + "KS"   # Temp dir for building ISO KS
+  if os.path.isdir(isoMountKS):  # Remove previous one, if still around for some reason
+    shutil.rmtree(isoMountKS)
+  os.makedirs(isoMountKS)
+  rsyncISO = "rsync -av \"{}/\" \"{}/\" > /dev/null 2>&1".format(isoMount, isoMountKS)
+  if subprocess.call(rsyncISO, shell=True) != 0:
+    print("Error running: {}".format(rsyncISO))
     return 1
-  if subprocess.call("chmod -R u+w \"" + isoMountDirKS + "\"", shell=True) != 0:
-    print("Error chmod -R u+w on %s" % red2(isoMountDirKS) )
+  chmodISO = "chmod -R u+w \"{}\"".format(isoMountKS)
+  if subprocess.call(chmodISO, shell=True) != 0:
+    print("Error running: {}".format(chmodISO))
     return 1
 
-  # Unmount ISO file
-  # Command 'hdiutil unmount -quiet isomount 2>&1' also doesn't work anymore, so instead we do:
-  cmdstr = "umount \"" + isoMountDir + "\" && diskutil eject " + lastDisk2 + " > /dev/null 2>&1"
-  #print("[%s]" % cmdstr
-  if subprocess.call(cmdstr, shell=True) != 0:
-    print("Error unmounting \"%s\"" % red2(isoFile))
+  # Unmount ISO
+  if unmountHybridISO(isoMount, device) != 0:
     return 1
-  os.rmdir(isoMountDir)
+  
+  os.rmdir(isoMount)
 
   # Modify isolinux.cfg to boot into Kickstart, and reduce prompt wait time, etc
-  sedInPlace(isoMountDirKS + "/isolinux/isolinux.cfg", r"^default.*$", "default ks")
-  sedInPlace(isoMountDirKS + "/isolinux/isolinux.cfg", r"^timeout.*$", "timeout 0")
-  sedInPlace(isoMountDirKS + "/isolinux/isolinux.cfg", r"^.*prompt.*$", "prompt 0")
-  with open(isoMountDirKS + "/isolinux/isolinux.cfg", "a") as f:
+  sedInPlace(isoMountKS + "/isolinux/isolinux.cfg", r"^default.*$", "default ks")
+  sedInPlace(isoMountKS + "/isolinux/isolinux.cfg", r"^timeout.*$", "timeout 0")
+  sedInPlace(isoMountKS + "/isolinux/isolinux.cfg", r"^.*prompt.*$", "prompt 0")
+  with open(isoMountKS + "/isolinux/isolinux.cfg", "a") as f:
     f.write("label ks\n  kernel vmlinuz\n  append ks=cdrom:/vmbin/ks.cfg initrd=initrd.img\n")
 
   # Copy special VM management files to this new ISO
-  cmdstr = "rsync -av \"" + vmhome + "/vmbin/\" \"" + isoMountDirKS + "/vmbin/\" > /dev/null 2>&1"
-  if subprocess.call(cmdstr, shell=True) != 0:
-    print("Error rsync'ing special VM management files")
+  rsyncVMBin = "rsync -av \"{}/vmbin/\" \"{}/vmbin/\" > /dev/null 2>&1".format(vmhome, isoMountKS)
+  if subprocess.call(rsyncVMBin, shell=True) != 0:
+    print("Error running: {}".format(rsyncVMBin))
     return 1
 
   # Use root password defined by this program
-  sedInPlace(isoMountDirKS + "/vmbin/ks.cfg", r"^rootpw password", "rootpw " + vmpwd)
+  sedInPlace(isoMountKS + "/vmbin/ks.cfg", r"^rootpw password", "rootpw " + vmpwd)
 
   # Create the new Kickstart ISO
-  cmdstr = "cd \"" + isoMountDirKS + "\"/ && " + mkisofs + " -quiet -o \"" + isoFileKS + "\" -b isolinux/isolinux.bin" + \
-          " -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -R -J -T . 2>&1"
-  if subprocess.call(cmdstr, shell=True) != 0:
-    print("Error creating %s" % isoFileKS)
+  mkISO = "cd \"{}\"/ && {} -quiet -o \"{}\" -b isolinux/isolinux.bin -c isolinux/boot.cat" + \
+          " -no-emul-boot -boot-load-size 4 -boot-info-table -R -J -T . 2>&1".format(isoMountKS,
+          mkisofs, isoFileKS)
+  if subprocess.call(mkISO, shell=True) != 0:
+    print("Error running: {}".format(mkISO))
     return 1
 
   # Remove temp KS dir
-  shutil.rmtree(isoMountDirKS)
+  shutil.rmtree(isoMountKS)
 
-  print("Creating temporary VM using above remastered Kickstart (KS) ISO")
+  print("Creating temporary VM using the new remastered Kickstart ISO")
   try:                          # Create empty/mutable IMachine object
     settingsFile = ''           # Null string so composeMachineFilename gets called automatically 
     groups = '/'                # '/' is REQUIRED for the default no-group association
@@ -1396,12 +1409,12 @@ def imgCreate(args):
     flags = ''                  # Null string is fine for a new machine
     vm = vbox.createMachine(settingsFile, ksVMName, groups, osTypeId, flags)
   except:
-    print("Error creating basic VM %s" % red2(ksVMName))
+    print("Error creating basic VM {}".format(ksVMName))
     return 1
    
   # Set these default settings
-  vm.CPUCount    = 1
-  vm.memorySize  = 1024
+  vm.CPUCount    = 2
+  vm.memorySize  = 2048
   vm.HPETEnabled = True
   vm.RTCUseUTC   = True
   vm.BIOSSettings.IOAPICEnabled = True
@@ -1430,10 +1443,10 @@ def imgCreate(args):
 
   # Create IMedium object for DVD
   forceNewUuid = False
-  dvdMedium = vbox.openMedium(isoFileKS, const.DeviceType_DVD, const.AccessMode_ReadOnly, forceNewUuid)
-  hddSize = vmhddsize    # Global variable
-  hddVariant = [const.MediumVariant_Standard] 
-  progress = hddMedium.createBaseStorage(hddSize, hddVariant) # Create hdd and get IProgress object
+  dvdMedium    = vbox.openMedium(isoFileKS, const.DeviceType_DVD, const.AccessMode_ReadOnly, forceNewUuid)
+  hddSize      = vmhddsize    # Global variable
+  hddVariant   = [const.MediumVariant_Standard] 
+  progress     = hddMedium.createBaseStorage(hddSize, hddVariant) # Create hdd and get IProgress object
   while not progress.completed:
     time.sleep(0.1)
   if not hddMedium.id:
@@ -1452,9 +1465,8 @@ def imgCreate(args):
   # Attach DVD and HDDs. Can only be done after registering machine
   (vmMuta, session) = openSession(vm, const.LockType_Write)
   vmMuta.attachDevice('SATA', 0, 0, const.DeviceType_HardDisk, hddMedium) 
-  #vmMuta.attachDevice('SATA', 1, 0, const.DeviceType_HardDisk)   # Disk2 gets added by vmStart
   vmMuta.attachDevice('SATA', 2, 0, const.DeviceType_DVD, dvdMedium) 
-  vmMuta.setBootOrder(1, const.DeviceType_DVD)  # Make DVD primary AND only boot device, so we can do unattended install
+  vmMuta.setBootOrder(1, const.DeviceType_DVD)  # Make DVD primary AND only boot dev to do KS install
   vmMuta.setBootOrder(2, const.DeviceType_Null)
   vmMuta.setBootOrder(3, const.DeviceType_Null)
   vmMuta.setBootOrder(4, const.DeviceType_Null)
@@ -1516,19 +1528,19 @@ def imgCreate(args):
 
   # Call this same function to create the OVA from the temp VM we just built
   print("\nCreating OVA %s" % imgName)
-  imgCreate([imgName, ksVMName, "-f1", "-f2"])
+  imgCreate(imgName, ksVMName)
   vmDelete([ksVMName, "-f"])
   print("END   %s" % (time.strftime("%H:%M:%S", time.localtime())))
   return 0
 
 
-def sedInPlace (filePath, fromRegex, toRegex, ignoreComments = True):
-  if not os.path.isfile(filePath):
-    print("File %s doesn't exist" % red2(filePath))
-    return 1   
-  with open(filePath, "r") as f:
+def sedInPlace (f, fromRegex, toRegex, ignoreComments = True):
+  if not os.path.isfile(f):
+    print("File '{}' doesn't exist".format(f))
+    return 1
+  with open(f, "r") as f:
     lines = f.readlines()
-  with open(filePath, "w") as f:
+  with open(f, "w") as f:
     for line in lines:
       if ignoreComments and line[0] == "#":
         f.write(line)   # Leave comment lines alone
@@ -1548,7 +1560,6 @@ def genFile(code, filename, mode):
 
 
 def main(args=None):
-
   # Ensure these 2 essential directories exist
   if not os.path.isdir(vmhome):
     os.makedirs(vmhome)
@@ -1591,7 +1602,7 @@ def main(args=None):
     'netadd':     lambda: netAdd(sys.argv[2:]),
     'netdel':     lambda: netDelete(sys.argv[2:]),
     'imgls':      lambda: imgList(),
-    'imgcreate':  lambda: imgCreate(sys.argv[2:]),
+    'imgcreate':  lambda: imgCreate(sys.argv[2], sys.argv[3]),
     'imgdel':     lambda: imgDelete(sys.argv[2:]),
     'imgimp':     lambda: imgImport(sys.argv[2:]),
   }
