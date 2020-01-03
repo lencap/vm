@@ -220,9 +220,9 @@ def vmCreate(args):
     print("Usage: vm create <vmName> <imgName>")
     return 1
 
-  imgFile = vmhome + '/' + imgName
-  if not (os.path.isfile(imgFile)): 
-    print("Image " + whi1(imgFile) + " doesn't exist.")
+  imgFile = os.path.join(vmhome, imgName)
+  if not os.path.isfile(imgFile): 
+    print("Image {} doesn't exist.".format(imgFile))
     return 1
 
   try:
@@ -238,7 +238,7 @@ def vmCreate(args):
   appliance.interpret()                # Populate virtualSystemDescriptions object
   warnings = appliance.getWarnings()   # Check for warnings during OVA interpretation
   if warnings:
-    print("OVA interpretation warnings: %s" % (yel2(warnings)))
+    print("OVA interpretation warnings: {}".format(warnings))
   sysDesc = appliance.getVirtualSystemDescriptions()  # Get IVirtualSystemDescription object
   if len(sysDesc) != 1:
     print(red2("Error: There are 0 or more than 1 VM described in this OVA. Unsupported."))
@@ -286,12 +286,12 @@ def vmCreate(args):
       VBoxValues[i] = '1024'
       continue
     if types[i] == 18 and onlyOneHdd:        # Set HardDiskImage path, and corresponding extraConfig
-      VBoxValues[i] = vbhome + '/' + vmName + '/' + vmName + "-disk1.vmdk"
+      VBoxValues[i] = os.path.join(vbhome, vmName, vmName + '-disk1.vmdk')
       extraConfigValues[i] = "controller=6;channel=0"
       onlyOneHdd = False
       continue
     elif types[i] == 18 and not onlyOneHdd:
-      VBoxValues[i] = vbhome + '/' + vmName + '/' + vmName + "-disk2.vmdk"
+      VBoxValues[i] = os.path.join(vbhome, vmName, vmName + '-disk2.vmdk')
       extraConfigValues[i] = "controller=6;channel=1"
     if types[i] == 21 and onlyOneNic:        # Set NetworkAdapter in slot 1 to NAT
       VBoxValues[i] = "6"
@@ -371,8 +371,8 @@ def attachDisk2(vm):
     oldMedium.deleteStorage()
     closeSession(session)
 
-  vmDrvDmg = vbhome + '/' + vm.name + '/' + vm.name + '-disk2.dmg'
-  vmDrvVmdk = vbhome + '/' + vm.name + '/' + vm.name + '-disk2.vmdk'
+  vmDrvDmg = os.path.join(vbhome, vm.name, vm.name + '-disk2.dmg')
+  vmDrvVmdk = os.path.join(vbhome, vm.name, vm.name + '-disk2.vmdk')
   if os.path.isfile(vmDrvDmg):   # Remove old file if it exists
     os.remove(vmDrvDmg)
 
@@ -1033,7 +1033,7 @@ def vmProvision(args):
     print("[%s] Provisioning" % (whi1(vmName)))
 
     vmImg = cfg.get(sect, 'image')           # 2 image (Mandatory)
-    vmImgPath = vmhome + '/' + vmImg
+    vmImgPath = os.path.join(vmhome, vmImg)
     if not os.path.isfile(vmImgPath): 
       print(whi1(vmImg) + " doesn't exist. Please specify an available VM image for " + whi1(key))
       return 1
@@ -1143,7 +1143,7 @@ def imgList():
   if len(fList) < 1: return 1   # No OVA files to list, so return empty-handed
   print("%-20s%-54s%s" % ('NAME', 'FILE', 'SIZE'))
   for fName in fList:
-    fPath = vmhome + '/' + fName
+    fPath = os.path.join(vmhome, fName)
     fSize = str(os.path.getsize(fPath) >> 20) + 'MB'    # Note shift by 20 to get size in MB
     hddFile = '<undefined>' 
     if not tarfile.is_tarfile(fPath): continue          # It's named *.ova but it's not an OVA file (tar file)
@@ -1161,7 +1161,7 @@ def imgDelete(args):
     print("Usage: vm imgdel <imgName> [-f]")
     return 1
   if option != "-f": option = "normal"
-  imgFile = vmhome + '/' + imgName
+  imgFile = os.path.join(vmhome, imgName)
   if not os.path.isfile(imgFile): 
     print("Error: No such OVA file.")
     return 1
@@ -1174,34 +1174,31 @@ def imgDelete(args):
   return 0
 
 
-def imgImport(args):
-  imgFile = None
-  if len(args) == 1:
-    imgFile = args[0]
-  else:
-    print("Usage: vm imgimp <imgFile>")
+def imgImport(imgFile):
+  if not os.path.isfile(imgFile): 
+    print("File '{}' does not exist.".format(imgFile))
     return 1
-  if not (os.path.isfile(imgFile)): 
-    print("That OVA image file doesn't exist")
+  # Reject if no .ova extension, or if not a tar file (what OVAs really are)
+  if not imgFile.lower().endswith("ova") or not tarfile.is_tarfile(imgFile):
+    print("File {} does not have an '.ova' extension or it's not an OVA file.".format(imgFile))
     return 1
-  imgName = os.path.basename(imgFile)
-  if os.path.isfile(vmhome + '/' + imgName): 
-    print("%s exists already" % whi1(imgName))
+  targetFile = os.path.join(vmhome, os.path.basename(imgFile))
+  if os.path.isfile(targetFile): 
+    print("Image file {} already exists.".format(targetFile))
     return 1
-  # Reject if it doesn't end with .ova, or if it's not a tar file (what OVAs are)
-  if not (tarfile.is_tarfile(imgFile)) or not (imgFile.lower().endswith("ova")):
-    print("Unsupported OVA image file")
-    return 1
+
   # Reject image tar package if it doesn't have the right files
   badOva = True
   tar = tarfile.open(imgFile, "r")
-  for tarf in tar.getnames():
-    if tarf.lower().endswith(("vmdk","vdi","vhd", "ovf")): badOva = False
+  for f in tar.getnames():
+    if f.lower().endswith(("vmdk","vdi","vhd", "ovf")):
+      badOva = False
   tar.close()
   if badOva:
     print("Content of that OVA image file is not valid")
     return 1
-  # Copy the OVA to where OVAs are kept
+
+  # Copy the OVA to vmhome, where OVA image files are kept
   shutil.copy(imgFile, vmhome)
   return 0
 
@@ -1239,88 +1236,20 @@ def unmountHybridISO(isoMount, device):
   return 0
 
 
-def imgCreateFromVM(imgName, imgSrc):
-  return 0
-
-def imgCreate(imgName, imgSrc):
-  # Detect if imgSrc ends with .iso and do ISO, assume anything else is a VM name
-  # ****************************** 
-  if imgName == "" or imgSrc == "":
-    print("Usage: vm imgcreate <imgName> <ISO|vmName>")
-    return 1
-
-  if not imgName.lower().endswith('.ova'):
-    print("imgName '{}' must end with .ova".format(imgName))
-    return 1
-
-  imgFile = vmhome + '/' + imgName
-
-  if os.path.isfile(imgFile): 
-    print("imgName '{}' already exists.".format(imgName))
-    return 1
-
-  vmName = isoFile = None
-  try:
-    vm = vbox.findMachine(imgSrc)  # Get the IMachine object (read-only)
-    vmName = imgSrc                # The source for this OVA will be this VM
-  except:
-    if os.path.isfile(imgSrc) and imgSrc.lower().endswith('.iso'):
-      isoFile = imgSrc
-    else:
-      print("Error: '{}' is not an existing VM, nor a valid ISO file".format(imgSrc))
-      return 1
-  # By now we should know if imgSrc is either an existing VM or an ISO file    
-
-  # Create OVA from existing VM
-  if imgSrc == vmName:
-    if option1 != '-f2' and option2 != '-f2': 
-      msg = "Did you run /usr/sbin/vmprep on '{}' yet? y/n ".format(vmName)
-      response = raw_input(msg)
-      if response != 'y':
-        return 1
-    if vm.state == const.MachineState_Running:   
-      print("%s needs to be powered off for this" % whi1(vmName))
-      return 1
-
-    # At this point we know we can forcefully overwrite an existing duplicate
-    if os.path.isfile(imgFile):
-      os.remove(imgFile)
-
-    # Create OVA = Create appliance and export VM to it
-    appliance = vbox.createAppliance()        # Create empty IAppliance object
-    sysDesc = vm.exportTo(appliance, imgFile) # Each call adds another VM to sysDesc list
-
-    # OPTIONAL: Here you could override any VirtualSystemDescriptionType values (see vmCreate for more info)
-    #sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
-    exportOptions = []  # Empty is typically better, but here are the ExportOptions
-                        # CreateManifest=1  ExportDVDImages=2  StripAllMACs=3  StripAllNonNATMACs=4
-
-    # Export the appliance, creating OVA file, and get IProgress object
-    progress = appliance.write('ovf-2.0', exportOptions, imgFile)
-    lapCount = 0
-    while not progress.completed:
-      sys.stdout.write('.') ; sys.stdout.flush()  # Dot progress
-      time.sleep(0.2)
-      lapCount += 1
-      if lapCount % 78 == 0:
-        print
-    print
-
-    return 0
-
-  # Create OVA from given ISO file, doing a CentOS Kickstart install
-  # ========================================================================================
-  from distutils import spawn
-  mkisofs = spawn.find_executable("mkisofs")
+def imgCreateFromISO(imgFile, isoFile):
+  # First things first
+  from distutils.spawn import find_executable
+  mkisofs = find_executable('mkisofs')
   if mkisofs == None:
-    print("Cannot find required 'mkisofs' binary. This tool is not native to macos,\n"
-          "and must be installed with 'brew install cdrtools' or equivalent.")
+    print("Can't find required 'mkisofs' binary. Note that this tool is not native to\n"
+          "macos, and must be installed with 'brew install cdrtools' or equivalent.")
     return 1
 
-  print("Creating '{}' will take about 10 minutes depending on below activities\n"
+  # Create OVA from given ISO file, by doing a CentOS Kickstart install
+  print("Creating '{}' will take about 10 minutes depending on below activities:\n"
         "1. Remastering '{}' for an unattended install.\n"
         "2. Building a temporary VM using the remastered ISO.\n"
-        "3. Creating the new OVA from that temporary VM.".format(imgName,
+        "3. Creating the new OVA from that temporary VM.".format(os.path.basename(imgFile),
         os.path.basename(isoFile)))
   response = raw_input("Ready to proceed? y/n ")
   if response != "y":
@@ -1333,18 +1262,18 @@ def imgCreate(imgName, imgSrc):
     try:
       ksVM = vbox.findMachine(ksVMName)  # Get the IMachine object (read-only)
       ksVMName = ""
-      continue                           # Holy smoke! Seems like this VM already exists. Try again.
+      continue                           # This VM name already exists. Try again.
     except:
       break                              # Generated name will not clash with existing VMs
  
-  print("START %s" % (time.strftime("%H:%M:%S", time.localtime())))
+  print("START {}".format(time.strftime("%H:%M:%S", time.localtime())))
 
   # Define isoFileKS variable now so we can announce the process, but it's actually created later
-  isoFileKS = vmhome + '/' + os.path.basename(isoFile)[:-4] + "-KS.iso"
+  isoFileKS = os.path.join(vmhome, os.path.basename(isoFile)[:-4] + '-KS.iso')
   print("Remastering original ISO into {}".format(os.path.basename(isoFileKS)))
 
-  # Create temp mount dir
-  isoMount = vmhome + '/' + "isomount"
+  # Create temp ISO mount dir
+  isoMount = os.path.join(vmhome, 'iso')
   if os.path.isdir(isoMount):    # Remove previous one, if still around for some reason
     shutil.rmtree(isoMount)
   os.makedirs(isoMount)   
@@ -1390,7 +1319,7 @@ def imgCreate(imgName, imgSrc):
   # Use root password defined by this program
   sedInPlace(isoMountKS + "/vmbin/ks.cfg", r"^rootpw password", "rootpw " + vmpwd)
 
-  # Create the new Kickstart ISO
+  # Create the new Kickstart ISO = isoFileKS
   mkISO = "cd \"{}\"/ && {} -quiet -o \"{}\" -b isolinux/isolinux.bin -c isolinux/boot.cat" + \
           " -no-emul-boot -boot-load-size 4 -boot-info-table -R -J -T . 2>&1".format(isoMountKS,
           mkisofs, isoFileKS)
@@ -1438,9 +1367,8 @@ def imgCreate(imgName, imgSrc):
   nic1.bridgedInterface  = None
 
   # Create hdd/dvd media, and sets up storage controllers
-  location = vbhome + '/' + ksVMName + '/' + ksVMName + "-disk1.vmdk"
-  hddMedium = vbox.createMedium('VMDK', location, const.AccessMode_ReadWrite, const.DeviceType_HardDisk)
-
+  diskFile = os.path.join(vbhome, ksVMName, ksVMName + '-disk1.vmdk')
+  hddMedium = vbox.createMedium('VMDK', diskFile, const.AccessMode_ReadWrite, const.DeviceType_HardDisk)
   # Create IMedium object for DVD
   forceNewUuid = False
   dvdMedium    = vbox.openMedium(isoFileKS, const.DeviceType_DVD, const.AccessMode_ReadOnly, forceNewUuid)
@@ -1460,8 +1388,9 @@ def imgCreate(imgName, imgSrc):
   ctrlSATA.useHostIOCache = True
   vm.setStorageControllerBootable('SATA', True)
 
-  vbox.registerMachine(vm)   # Create this temporary VM
-
+  # Create this temporary VM
+  vbox.registerMachine(vm)
+  
   # Attach DVD and HDDs. Can only be done after registering machine
   (vmMuta, session) = openSession(vm, const.LockType_Write)
   vmMuta.attachDevice('SATA', 0, 0, const.DeviceType_HardDisk, hddMedium) 
@@ -1527,11 +1456,71 @@ def imgCreate(imgName, imgSrc):
   closeSession(session)
 
   # Call this same function to create the OVA from the temp VM we just built
-  print("\nCreating OVA %s" % imgName)
-  imgCreate(imgName, ksVMName)
+  print("\nCreating OVA {}\n".format(imgFile))
+  imgCreateFromVM(imgFile, ksVMName)
   vmDelete([ksVMName, "-f"])
-  print("END   %s" % (time.strftime("%H:%M:%S", time.localtime())))
+
+  print("END   {}".format(time.strftime("%H:%M:%S", time.localtime())))
   return 0
+
+
+def imgCreateFromVM(imgFile, vmName):
+  # Try getting existing IMachine object (read-only)
+  try:
+    vm = vbox.findMachine(vmName)
+  except:
+    print("There is no existing VM named '{}'.".format(vmName))
+    return 1
+
+  msg = "Before using VM '{}' as source for an OVA image, you first have to ssh to it\n" \
+        "and run /usr/sbin/vmprep. Have you done this already? y/n ".format(vmName)
+  response = raw_input(msg)
+  if response != 'y':
+    return 1
+
+  if vm.state == const.MachineState_Running:   
+    print("VM {} needs to be powered off for this".format(vmName))
+    return 1
+
+  # Create OVA = Create appliance and export VM to it
+  appliance = vbox.createAppliance()             # Create empty IAppliance object
+  sysDesc   = vm.exportTo(appliance, imgFile)  # Each call adds another VM to sysDesc list
+
+  # OPTIONAL: Could override any VirtualSystemDescriptionType values (see vmCreate for more info)
+  #sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
+  exportOptions = []  # Empty is typically better, but here are the ExportOptions
+                      # CreateManifest=1  ExportDVDImages=2  StripAllMACs=3  StripAllNonNATMACs=4
+
+  # Export the appliance, creating OVA file, and get IProgress object
+  progress = appliance.write('ovf-2.0', exportOptions, imgFile)
+  lapCount = 0
+  while not progress.completed:
+    sys.stdout.write('.')
+    sys.stdout.flush()     # Dot progress
+    time.sleep(0.2)
+    lapCount += 1
+    if lapCount % 78 == 0:
+      print
+  print
+
+  return 0
+
+
+def imgCreate(imgName, imgSrc):
+  if not imgName.lower().endswith('.ova'):
+    print("Image name must have an '.ova' extension.")
+    return 1
+
+  imgFile = os.path.join(vmhome, imgName)
+  if os.path.isfile(imgFile):
+    print("Image file {} already exists.".format(imgFile))
+    return 1
+
+  # What source are we creating the image from?
+  if imgSrc.lower().endswith('.iso') and os.path.isfile(imgSrc):
+    return imgCreateFromISO(imgFile, os.path.abspath(imgSrc))  # Let's create from given ISO file
+  else:
+    return imgCreateFromVM(imgFile, imgSrc)                    # Let's create from given VM name
 
 
 def sedInPlace (f, fromRegex, toRegex, ignoreComments = True):
@@ -1604,7 +1593,7 @@ def main(args=None):
     'imgls':      lambda: imgList(),
     'imgcreate':  lambda: imgCreate(sys.argv[2], sys.argv[3]),
     'imgdel':     lambda: imgDelete(sys.argv[2:]),
-    'imgimp':     lambda: imgImport(sys.argv[2:]),
+    'imgimp':     lambda: imgImport(sys.argv[2]),
   }
 
   if len(sys.argv) < 2:
