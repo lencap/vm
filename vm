@@ -1225,12 +1225,13 @@ def imgCreateFromISO(imgFile, isoFile):
     return 1
 
   # Create OVA from given ISO file, by doing a CentOS Kickstart install
-  print("Creating '{}' will take about 10 minutes depending on below activities:\n"
-        "1. Remastering '{}' for an unattended install.\n"
+  img = whi(os.path.basename(imgFile))
+  iso = whi(os.path.basename(isoFile))
+  print("Creating {} will take about 10 minutes depending on below activities:\n"
+        "1. Remastering {} for an unattended install.\n"
         "2. Building a temporary VM using the remastered ISO.\n"
-        "3. Creating the new OVA from that temporary VM.".format(os.path.basename(imgFile),
-        os.path.basename(isoFile)))
-  response = raw_input("Ready to proceed? y/n ")
+        "3. Creating the new OVA from that temporary VM.".format(img, iso))
+  response = raw_input("Ready to proceed? [y/n]: ")
   if response != "y":
     return 1
 
