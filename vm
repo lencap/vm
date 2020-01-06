@@ -34,14 +34,12 @@ vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
 vmprikey  = vmhome + '/vmbin/vmkey'        # Global private SSH key
 vmpubkey  = vmhome + '/vmbin/vmkey.pub'    # Global public SSH key
 vmksconf  = vmhome + '/vmbin/ks.cfg'       # Automated Kickstart installation file
-vmrootrc  = vmhome + '/vmbin/root.bashrc'  # Default root bashrc file
-vmpreprc  = vmhome + '/vmbin/vmprep'       # Pre-imaging preparation script
 vmbootrc  = vmhome + '/vmbin/vmboot'       # Bootstrap script
 vmconf    = 'vm.conf'                      # Default provisioning filename
 vmhddsize = 8589934592                     # Default VM disk size in bytes (8GB)
 vbnictype = 'Virtio'                       # Virtio and 82545EM offer best CentOS perf
 vmdefip   = '10.11.12.2'                   # Default IP address
-vmuser    = 'root'                         # WARNING: Be aware that this is poor
+vmuser    = 'user1'                        # WARNING: Be aware that this is poor
 vmpwd     = 'password'                     # WARNING: but convenient security
 
 
@@ -209,24 +207,22 @@ def vmList():
 
 
 def vmCreate(args):
-  vmName = imgName = None
-  if len(args) == 2:
-    (vmName, imgName) = args
-  else:
+  if len(args) < 2 or len(args) > 2:
     print("Usage: vm create <vmName> <imgName>")
     return 1
-
-  imgFile = os.path.join(vmhome, imgName)
-  if not os.path.isfile(imgFile): 
-    print("Image {} doesn't exist.".format(imgFile))
-    return 1
+  (vmName, imgName) = args
 
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-    print("VM %s already exist" % whi(vmName))
+    print("VM {} already exist".format(whi(vmName)))
     return 1
   except:
-    dummyVar = 1   # ... let' continue creating VM
+    pass   # ... let' continue creating VM
+
+  imgFile = os.path.join(vmhome, imgName)
+  if not os.path.isfile(imgFile):
+    print("Image named {} doesn't exist.".format(whi(imgName)))
+    return 1
 
   # Inspect OVA before importing into this new VM we're creating from it
   appliance = vbox.createAppliance()   # Create empty IAppliance object
@@ -348,7 +344,7 @@ def vmCreate(args):
 
 
 def attachDisk2(vm):
-  # Create second 1MB HDD to facilitate VM bootstrapping
+  # Create a second 1MB HDD to facilitate VM bootstrapping
   # 1. Create RAW FAT32 disk2 : hdiutil create -size 1m "FilePath.dmg" -fs MS-DOS -volname VMCONF
   # 2. Mount it               : hdiutil attach "FilePath.dmg"
   # 3. Copy files to it
@@ -357,12 +353,12 @@ def attachDisk2(vm):
   
   # First, detach and delete old 2nd drive if it exists
   try:
-    oldMedium = vm.getMedium('SATA', 1, 0)
+    oldMedium = vm.getMedium('SATA Controller', 1, 0)
   except:
     oldMedium = None
   if oldMedium:
     (vmMuta, session) = openSession(vm, const.LockType_Write)
-    vmMuta.detachDevice('SATA', 1, 0)
+    vmMuta.detachDevice('SATA Controller', 1, 0)
     vmMuta.saveSettings()              # Required to release the medium
     oldMedium.deleteStorage()
     closeSession(session)
@@ -398,9 +394,9 @@ def attachDisk2(vm):
 
   # Convert DMG drive file to the VirtualBox VDI format
   # No API call for this, so we have to invoke VBoxManage
-  cmdStr = "VBoxManage convertfromraw \"" + vmDrvDmg + "\" \"" + vmDrvVmdk + "\" --format vmdk > /dev/null 2>&1"
-  if subprocess.call(cmdStr, shell=True) != 0:
-    print("Error converting to %s" % (red(vmDrvVmdk)))
+  convertDsk = "VBoxManage convertfromraw \"{}\" \"{}\" --format vmdk > /dev/null 2>&1".format(vmDrvDmg, vmDrvVmdk)
+  if subprocess.call(convertDsk, shell=True) != 0:
+    print("Error running: {}".format(red(convertDsk)))
     return 1
   os.remove(vmDrvDmg)  # Remove the DMG one
 
@@ -409,13 +405,13 @@ def attachDisk2(vm):
   hddMedium.refreshState()
   if hddMedium.state != const.MediumState_Created:
     print(hddMedium.id)
-    print("Error trying to setup the second drive:\n%s" % (red(hddMedium.lastAccessError)))
+    print("Error trying to set up the second drive:\n%s" % (red(hddMedium.lastAccessError)))
     return 1
 
-  # Set up storage controller for this drive, attach the drive, and make it nonbootable
+  # Set up storage controller for this drive, attach the drive, and make it non-bootable
   (vmMuta, session) = openSession(vm, const.LockType_Write)
-  vmMuta.getStorageControllerByName('SATA').portCount = 3
-  vmMuta.attachDevice('SATA', 1, 0, const.DeviceType_HardDisk, hddMedium) 
+  vmMuta.getStorageControllerByName('SATA Controller').portCount = 4
+  vmMuta.attachDevice('SATA Controller', 1, 0, const.DeviceType_HardDisk, hddMedium) 
   closeSession(session)
   return
 
@@ -1118,13 +1114,14 @@ def imgList():
     if f.lower().endswith(".ova"):
       fList.append(f)
   if len(fList) < 1: return 1   # No OVA files to list, so return empty-handed
-  print("%-20s%-54s%s" % ('NAME', 'FILE', 'SIZE'))
+  fmt = "{:20}  {:54}{}"
+  print(fmt.format('NAME', 'PATH', 'SIZE'))
   for fName in fList:
     fPath = os.path.join(vmhome, fName)
     fSize = str(os.path.getsize(fPath) >> 20) + 'MB'    # Note shift by 20 to get size in MB
     hddFile = '<undefined>' 
     if not tarfile.is_tarfile(fPath): continue          # It's named *.ova but it's not an OVA file (tar file)
-    print("%-20s%-54s%s" % (fName, fPath, fSize))
+    print(fmt.format(fName, fPath, fSize))
   return 0
 
 
@@ -1153,18 +1150,18 @@ def imgDelete(args):
 
 def imgImport(args):
   if len(args) < 1 or len(args) > 1:
-    Die(1, "Usage: vm imgimp <imgName>")
-  (imgFile) = args
+    Die(1, "Usage: vm imgimp <imgFile>")
+  imgFile = args[0]
   if not os.path.isfile(imgFile): 
-    print("File '{}' does not exist.".format(imgFile))
+    print("File {} does not exist.".format(whi(imgFile)))
     return 1
   # Reject if no .ova extension, or if not a tar file (what OVAs really are)
   if not imgFile.lower().endswith("ova") or not tarfile.is_tarfile(imgFile):
-    print("File {} does not have an '.ova' extension or it's not an OVA file.".format(imgFile))
+    print("File {} lacks '.ova' extension or it's not an OVA file.".format(whi(imgFile)))
     return 1
   targetFile = os.path.join(vmhome, os.path.basename(imgFile))
   if os.path.isfile(targetFile): 
-    print("Image file {} already exists.".format(targetFile))
+    print("Image {} already exists.".format(whi(targetFile)))
     return 1
 
   # Reject image tar package if it doesn't have the right files
@@ -1221,8 +1218,7 @@ def imgCreateFromISO(imgFile, isoFile):
   from distutils.spawn import find_executable
   mkisofs = find_executable('mkisofs')
   if mkisofs == None:
-    print("Can't find required 'mkisofs' binary. Note that this tool is not native to\n"
-          "macos, and must be installed with 'brew install cdrtools' or equivalent.")
+    print("Can't find required 'mkisofs' binary. Instal with 'brew install cdrtools' or equivalent.")
     return 1
 
   # Create OVA from given ISO file, by doing a CentOS Kickstart install
@@ -1369,19 +1365,19 @@ def imgCreateFromISO(imgFile, isoFile):
     return 1
 
   # Setup SATA storage controller
-  ctrlSATA = vm.addStorageController('SATA', const.StorageBus_SATA)
+  ctrlSATA = vm.addStorageController('SATA Controller', const.StorageBus_SATA)
   ctrlSATA.controllerType = const.StorageControllerType_IntelAhci
-  ctrlSATA.portCount = 3
+  ctrlSATA.portCount = 4
   ctrlSATA.useHostIOCache = True
-  vm.setStorageControllerBootable('SATA', True)
+  vm.setStorageControllerBootable('SATA Controller', True)
 
   # Create this temporary VM
   vbox.registerMachine(vm)
   
   # Attach DVD and HDDs. Can only be done after registering machine
   (vmMuta, session) = openSession(vm, const.LockType_Write)
-  vmMuta.attachDevice('SATA', 0, 0, const.DeviceType_HardDisk, hddMedium) 
-  vmMuta.attachDevice('SATA', 2, 0, const.DeviceType_DVD, dvdMedium) 
+  vmMuta.attachDevice('SATA Controller', 0, 0, const.DeviceType_HardDisk, hddMedium) 
+  vmMuta.attachDevice('SATA Controller', 2, 0, const.DeviceType_DVD, dvdMedium) 
   vmMuta.setBootOrder(1, const.DeviceType_DVD)  # Make DVD primary AND only boot dev to do KS install
   vmMuta.setBootOrder(2, const.DeviceType_Null)
   vmMuta.setBootOrder(3, const.DeviceType_Null)
@@ -1431,7 +1427,7 @@ def imgCreateFromISO(imgFile, isoFile):
 
   # Lets modify the VM so it boots off HDD, and clean things up
   (vmMuta, session) = openSession(vm, const.LockType_Write)
-  vmMuta.detachDevice('SATA',  2, 0)                 # Detaching KS ISO file from DVD drive
+  vmMuta.detachDevice('SATA Controller',  2, 0)                 # Detaching KS ISO file from DVD drive
   vmMuta.setBootOrder(1, const.DeviceType_HardDisk)  # Now make HDD primary boot device
   vmMuta.setBootOrder(2, const.DeviceType_Null)
   vmMuta.setBootOrder(3, const.DeviceType_Null)
@@ -1458,12 +1454,6 @@ def imgCreateFromVM(imgFile, vmName):
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
     print("There is no existing VM or ISO file named '{}'.".format(vmName))
-    return 1
-
-  msg = "Before using VM '{}' as source for an OVA image, you first have to ssh to it\n" \
-        "and run /usr/sbin/vmprep. Have you done this already? y/n ".format(vmName)
-  response = raw_input(msg)
-  if response != 'y':
     return 1
 
   if vm.state == const.MachineState_Running:   
@@ -1507,11 +1497,11 @@ def imgCreate(args):
     print("Image file {} already exists.".format(imgFile))
     return 1
 
-  # What source are we creating the image from?
+  # Call respective function based on given source
   if imgSrc.lower().endswith('.iso') and os.path.isfile(imgSrc):
-    return imgCreateFromISO(imgFile, os.path.abspath(imgSrc))  # Let's create from given ISO file
+    return imgCreateFromISO(imgFile, os.path.abspath(imgSrc))  # Create from ISO file
   else:
-    return imgCreateFromVM(imgFile, imgSrc)                    # Let's create from given VM name
+    return imgCreateFromVM(imgFile, imgSrc)                    # Create from named VM
 
 
 def sedInPlace(filePath, fromRegex, toRegex, ignoreComments = True):
@@ -1548,20 +1538,18 @@ def main(args=None):
 
   # Generate essential files on every run to always keep them fresh
   genFile("#02=>", vmprikey, 0o600)
-  subprocess.call("ssh-keygen -f " + vmprikey + " -y > " + vmpubkey, shell=True)
+  subprocess.call("ssh-keygen -f {} -y > {}".format(vmprikey,vmpubkey), shell=True)
   genFile("#03=>", vmksconf, 0o644)
-  genFile("#04=>", vmrootrc, 0o644)
-  genFile("#05=>", vmpreprc, 0o755)
   genFile("#06=>", vmbootrc, 0o755)
 
   # Initialized VirtualBox. Note global variables
   global vboxmgr, const, vbox, vbhome
-  vboxmgr = VirtualBoxManager(None, None)  # Init mgr with default style/parameters
-  const   = vboxmgr.constants              # Constants handle
-  vbox    = vboxmgr.getVirtualBox()        # IVirtualBox handle
+  vboxmgr = VirtualBoxManager(None, None)   # Init mgr with default style/parameters
+  const   = vboxmgr.constants               # Constants handle
+  vbox    = vboxmgr.getVirtualBox()         # IVirtualBox handle
+  vbhome  = vbox.systemProperties.defaultMachineFolder
   if int(vbox.APIVersion[0]) < 5:
-    Die(1, red("Error. VirtualBox 5.0+ is required."))
-  vbhome = vbox.systemProperties.defaultMachineFolder
+    Die(1, red("Requires VirtualBox v5.0 or greater."))
 
   # Parse arguments
   # Python has no switch/case construct, so below 'action' switcher works around that.  
@@ -1696,13 +1684,11 @@ if __name__ == '__main__':
 #03=>clearpart --all --drives=sda
 #03=>zerombr 
 #03=>part / --fstype=ext4 --grow --size=1 --asprimary
-#03=># 'net.ifnames=0 biosdevname=0' disables CentOS 7 predictable network interface names
-#03=>bootloader --location=mbr --driveorder=sda --append="nomodeset crashkernel=auto rhgb quiet net.ifnames=0 biosdevname=0" --timeout=0
+#03=>bootloader --location=mbr --driveorder=sda --append="nomodeset crashkernel=auto rhgb quiet" --timeout=0
 #03=>
 #03=># NETWORK
-#03=># CentOS 7 now uses predictable interface names (old eth0 is now enp0s3 in VBox H/W), but we disabled in bootloader
-#03=>network --onboot=yes --device=eth0 --noipv6 --bootproto=static --ip=10.0.2.15 --netmask=255.255.255.0 --gateway=10.0.2.2 --nameserver=10.0.2.3
-#03=>network --onboot=yes --device=eth1 --noipv6 --bootproto=static --ip=10.12.13.2 --netmask=255.255.255.0
+#03=>network --onboot=yes --device=enp0s3 --noipv6 --bootproto=static --ip=10.0.2.15 --netmask=255.255.255.0 --gateway=10.0.2.2 --nameserver=10.0.2.3
+#03=>network --onboot=yes --device=enp0s8 --noipv6 --bootproto=static --ip=10.12.13.2 --netmask=255.255.255.0
 #03=>
 #03=># PACKAGES
 #03=>%packages --nobase --excludedocs
@@ -1750,7 +1736,6 @@ if __name__ == '__main__':
 #03=>mkdir /root/.ssh && chmod 700 /root/.ssh
 #03=>mv /root/bin/vmkey.pub /root/.ssh/authorized_keys
 #03=>mv /root/bin/vmboot /usr/sbin/
-#03=>mv /root/bin/vmprep /usr/sbin/
 #03=>chmod 644 /root/.ssh/authorized_keys
 #03=>rm -rf /root/bin
 #03=>
@@ -1776,46 +1761,8 @@ if __name__ == '__main__':
 #03=>mv /usr/lib/locale/locale-archive /usr/lib/locale/locale-archive.tmpl
 #03=>build-locale-archive
 #03=>
-#03=>echo "==> Preparing host for image creation"
-#03=>vmprep
-#03=>
 #03=>echo "==> END `/bin/date +%H:%M:%S`"
 #03=>%end
-
-#04=># /root/.bashrc
-#04=># Source global definitions
-#04=>[[ -f /etc/bashrc ]] && source /etc/bashrc
-#04=># User specific aliases and functions
-#04=>alias rm='rm -i'
-#04=>alias cp='cp -i'
-#04=>alias mv='mv -i'
-#04=>alias ls='ls --color'
-#04=>alias ll='ls -ltr'
-#04=>alias h='history'
-#04=>[[ -x /usr/bin/vim ]] && alias vi='vim'
-#04=># PS1 Prompt: Try friendlier puppet certname or default to system hostname
-#04=>hName=`grep -v "^#" /etc/puppet/puppet.conf 2>/dev/null | grep " certname " | awk '{print $3}'`
-#04=>[[ -z "$hName" ]] && hName=`hostname -s`
-#04=>hName=${hName%%.*}
-#04=>PS1="\[\033[01;31m\][\u@$hName \W]# \[\033[00;32m\]"
-
-#05=>#!/bin/bash
-#05=># vmprep
-#05=># Preimaging cleanup
-#05=>rm -rf /var/cache/yum /var/lib/yum
-#05=>yum -y clean all
-#05=>[[ "`which puppet 2>/dev/null`" ]] && SSLDIR=`puppet agent --configprint ssldir` && rm -rf $SSLDIR
-#05=>for F in grubby dmesg boot.log maillog wtmp lastlog secure messages cron ; do
-#05=>  [[ -e "/var/log/$F" ]] && >/var/log/$F
-#05=>done
-#05=>rm -rf /var/log/anaconda/* /var/log/audit/*
-#05=>sed -i "/^HWADDR=/d" /etc/sysconfig/network-scripts/ifcfg-*
-#05=>MARKER=/root/.clear_history
-#05=>echo $MARKER > $MARKER
-#05=>sed -i'' "/f \$HISTFILE/d" /root/.bash_logout
-#05=>printf "[ -e $MARKER ] && history -c && rm -rf \$HISTFILE /root/.bash_history $MARKER\n" >> /root/.bash_logout
-#05=># Ensure bash runs .bash_logout on exit and clears bash history
-#05=>trap 'sh /root/.bash_logout' EXIT
 
 #06=>#!/bin/bash
 #06=># vmboot
@@ -1830,8 +1777,7 @@ if __name__ == '__main__':
 #06=>ipAddr=`cat /vmboot/ip.txt`
 #06=>echo "Hostname   : $newHostname" | tee -a $LOGFILE
 #06=>echo "IPAddress  : $ipAddr" | tee -a $LOGFILE
-#06=>#nic0=enp0s3 nic1=enp0s8  # Use newer PNI device names?
-#06=>nic0=eth0 nic1=eth1       # Stay with old NIC names for now
+#06=>nic0=eth0 nic1=eth1   # nic0=enp0s3 nic1=enp0s8
 #06=>nic0File=/etc/sysconfig/network-scripts/ifcfg-$nic0
 #06=>nic1File=/etc/sysconfig/network-scripts/ifcfg-$nic1
 #06=>delval () { sed -i "/${2}=/d" ${1} ; }
