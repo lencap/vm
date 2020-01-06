@@ -56,11 +56,11 @@ def Usage():
         "{} info      <vmName>                 Dump VM details\n"
         "{} mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults to 1024\n"
         "{} ip        <vmName> <ip>            Set VM IP address\n"
-        "{} imgls                              List all available images\n"
+        "{} imglist                            List all available images\n"
         "{} imgcreate <imgName> <ISO|vmName>   Create imgName from ISO file or existing VM\n"
         "{} imgdel    <imgName> [f]            Delete image. Force option\n"
         "{} imgimp    <imgFile>                Import image. Make available to this program\n"
-        "{} netls                              List available networks\n"
+        "{} netlist                            List available networks\n"
         "{} netadd    <ip>                     Create new network\n"
         "{} netdel    <vboxnetX>               Delete given network"
         .format(whi(prgVer), p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
@@ -1554,34 +1554,23 @@ def main(args=None):
   # Python has no switch/case construct, so below 'action' switcher works around that.  
   # Note how we shift argv by 2 when calling the functions, to reduce remaining arguments.
   action = {
-    'c':          lambda: vmCreate(sys.argv[2:]),
-    'create':     lambda: vmCreate(sys.argv[2:]),
-    'd':          lambda: vmDelete(sys.argv[2:]),
-    'del':        lambda: vmDelete(sys.argv[2:]),
-    'imgc':       lambda: imgCreate(sys.argv[2:]),
-    'imgcreate':  lambda: imgCreate(sys.argv[2:]),
-    'imgd':       lambda: imgDelete(sys.argv[2:]),
-    'imgdel':     lambda: imgDelete(sys.argv[2:]),
-    'imgi':       lambda: imgImport(sys.argv[2:]),
-    'imgimp':     lambda: imgImport(sys.argv[2:]),
-    'imgls':      lambda: imgList(),
-    'in':         lambda: vmInfo(sys.argv[2:]),
-    'info':       lambda: vmInfo(sys.argv[2:]),
-    'ip':         lambda: vmIp(sys.argv[2:]),
-    'l':          lambda: vmList(),
-    'ls':         lambda: vmList(),
     'list':       lambda: vmList(),
-    'mod':        lambda: vmMod(sys.argv[2:]),
-    'neta':       lambda: netAdd(sys.argv[2:]),
-    'netadd':     lambda: netAdd(sys.argv[2:]),
-    'netd':       lambda: netDelete(sys.argv[2:]),
-    'netdel':     lambda: netDelete(sys.argv[2:]),
-    'netls':      lambda: netList(),
-    'p':          lambda: vmProvision(sys.argv[2:]),
-    'prov':       lambda: vmProvision(sys.argv[2:]),
-    'ssh':        lambda: vmSSH(sys.argv[2:]),
+    'create':     lambda: vmCreate(sys.argv[2:]),
+    'del':        lambda: vmDelete(sys.argv[2:]),
     'start':      lambda: vmStart(sys.argv[2:]),
     'stop':       lambda: vmStop(sys.argv[2:]),
+    'ssh':        lambda: vmSSH(sys.argv[2:]),
+    'prov':       lambda: vmProvision(sys.argv[2:]),
+    'info':       lambda: vmInfo(sys.argv[2:]),
+    'mod':        lambda: vmMod(sys.argv[2:]),
+    'ip':         lambda: vmIp(sys.argv[2:]),
+    'imglist':    lambda: imgList(),
+    'imgcreate':  lambda: imgCreate(sys.argv[2:]),
+    'imgdel':     lambda: imgDelete(sys.argv[2:]),
+    'imgimp':     lambda: imgImport(sys.argv[2:]),
+    'netlist':    lambda: netList(),
+    'netadd':     lambda: netAdd(sys.argv[2:]),
+    'netdel':     lambda: netDelete(sys.argv[2:]),
     'usage':      lambda: Usage(),
   }
 
