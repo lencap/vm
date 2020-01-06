@@ -28,7 +28,7 @@ except ImportError:
   Die(1, "Missing {} module. Is VirtualBox installed?".format(whi('vboxapi')))
 
 # Global variables
-prgVer    = 'v2.2.8'
+prgVer    = 'v2.3.0'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
 vmprikey  = vmhome + '/vmbin/vmkey'        # Global private SSH key
