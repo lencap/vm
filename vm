@@ -503,7 +503,7 @@ def vmStop(args):
     return 1
 
   if option == "normal": 
-    msg = "Are you sure you want to STOP " + whi(vmName) + "? y/n "
+    msg = "Stop {}? y/n ".format(whi(vmName))
     response = raw_input(msg)
     if response != "y":
       return 1
@@ -654,7 +654,7 @@ def vmDelete(args):
     return 1
 
   if option == "normal": 
-    msg = "Are you sure you want to destroy " + whi(vmName) + "? y/n "
+    msg = "Destroy {}? y/n ".format(whi(vmName))
     response = raw_input(msg)
     if response != "y":
       return 1
@@ -961,7 +961,7 @@ def vmMod(args):
 def vmProvision(args):
   if len(args) == 1 and args[0].lower() == "init":    # Create a template file if it was requested
     if os.path.isfile(vmconf):
-      msg = "File " + whi(vmconf) + " exists already. Overwrite it? y/n "
+      msg = "File {} exists already. Overwrite it? y/n ".format(whi(vmconf))
       response = raw_input(msg)
       if response != "y":
         return 1
@@ -1139,7 +1139,7 @@ def imgDelete(args):
     print("Error: No such OVA file.")
     return 1
   if option == "normal": 
-    msg = "Are you sure you want to delete " + whi(imgName) + "? y/n "
+    msg = "Delete {}? y/n ".format(whi(imgName))
     response = raw_input(msg)
     if response != "y":
       return 1
