@@ -39,32 +39,31 @@ vmconf    = 'vm.conf'                      # Default provisioning filename
 vmhddsize = 8589934592                     # Default VM disk size in bytes (8GB)
 vbnictype = 'Virtio'                       # Virtio and 82545EM offer best CentOS perf
 vmdefip   = '10.11.12.2'                   # Default IP address
-vmuser    = 'user1'                        # WARNING: Be aware that this is poor
-vmpwd     = 'password'                     # WARNING: but convenient security
+vmuser    = 'user1'
+vmpwd     = 'password'                     # WARNING: Very poor but convenient "security"
 
 
 def Usage():
-  v = whi(prgVer)
   p = whi(prgName)
-  print("Simple CentOS VM Manager {} \n"
+  print("Simple CentOS VM Manager {}\n"
+        "{} list                               List all VMs\n"
         "{} create    <vmName> <imgName>       Create VM using imgName\n"
         "{} del       <vmName> [f]             Delete VM. Force option\n"
+        "{} start     <vmName> [g]             Start VM. GUI option\n"
+        "{} stop      <vmName> [f]             Stop VM. Force option\n"
+        "{} ssh       <vmName> [<command>]     SSH into or optionally run command on VM\n"
+        "{} prov      [init]                   Provision VM(s) in vmconf file; init creates skeleton\n"
+        "{} info      <vmName>                 Dump VM details\n"
+        "{} mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults to 1024\n"
+        "{} ip        <vmName> <ip>            Set VM IP address\n"
+        "{} imgls                              List all available images\n"
         "{} imgcreate <imgName> <ISO|vmName>   Create imgName from ISO file or existing VM\n"
         "{} imgdel    <imgName> [f]            Delete image. Force option\n"
         "{} imgimp    <imgFile>                Import image. Make available to this program\n"
-        "{} imgls                              List all available images\n"
-        "{} info      <vmName>                 Dump VM details\n"
-        "{} ip        <vmName> <ip>            Set VM IP address\n"
-        "{} list                               List all VMs\n"
-        "{} mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults to 1024\n"
-        "{} netadd    <ip>                     Create new network\n"
-        "{} netdel    <vboxnetX>               Delete given network\n"
         "{} netls                              List available networks\n"
-        "{} prov      [init]                   Provision VM(s) in vmconf file; init creates skeleton\n"
-        "{} ssh       <vmName> [<command>]     SSH into or optionally run command on VM\n"
-        "{} start     <vmName> [g]             Start VM. GUI option\n"
-        "{} stop      <vmName> [f]             Stop VM. Force option\n".format(v,
-        p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+        "{} netadd    <ip>                     Create new network\n"
+        "{} netdel    <vboxnetX>               Delete given network"
+        .format(whi(prgVer), p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
   Die(1, "")
 
 
