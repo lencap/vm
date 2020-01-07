@@ -28,18 +28,17 @@ except ImportError:
   Die(1, "Missing {} module. Is VirtualBox installed?".format(whi('vboxapi')))
 
 # Global variables
-prgVer    = 'v2.3.0'
+prgVer    = 'v2.4.0'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
-vmprikey  = vmhome + '/vmbin/vmkey'        # Global private SSH key
-vmpubkey  = vmhome + '/vmbin/vmkey.pub'    # Global public SSH key
-vmksconf  = vmhome + '/vmbin/ks.cfg'       # Automated Kickstart installation file
-vmbootrc  = vmhome + '/vmbin/vmboot'       # Bootstrap script
+vmsshpri  = vmhome + '/vmkey'              # Global private SSH key
+vmsshpub  = vmhome + '/vmkey.pub'          # Global public SSH key
+vmnet     = vmhome + '/vmnet'              # Bootstrap network setup script
 vmconf    = 'vm.conf'                      # Default provisioning filename
 vmhddsize = 8589934592                     # Default VM disk size in bytes (8GB)
 vbnictype = 'Virtio'                       # Virtio and 82545EM offer best CentOS perf
 vmdefip   = '10.11.12.2'                   # Default IP address
-vmuser    = 'user1'
+vmuser    = 'vmuser'
 vmpwd     = 'password'                     # WARNING: Very poor but convenient "security"
 
 
@@ -57,13 +56,14 @@ def Usage():
         "{} mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults to 1024\n"
         "{} ip        <vmName> <ip>            Set VM IP address\n"
         "{} imglist                            List all available images\n"
-        "{} imgcreate <imgName> <ISO|vmName>   Create imgName from ISO file or existing VM\n"
-        "{} imgdel    <imgName> [f]            Delete image. Force option\n"
+        "{} imgcreate <imgName> <vmName>       Create imgName from existing VM\n"
+        "{} imgdawn                            How-to create brand new OVA image with Hashicorp packer\n"
         "{} imgimp    <imgFile>                Import image. Make available to this program\n"
+        "{} imgdel    <imgName> [f]            Delete image. Force option\n"
         "{} netlist                            List available networks\n"
         "{} netadd    <ip>                     Create new network\n"
         "{} netdel    <vboxnetX>               Delete given network"
-        .format(whi(prgVer), p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+        .format(whi(prgVer), p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
   Die(1, "")
 
 
@@ -189,7 +189,6 @@ def setVmIp(vm, ip):
   vmMuta.setGuestPropertyValue("/VirtualBox/GuestInfo/Net/1/V4/Broadcast", ".".join(ip.split(".")[:3]) + ".255")
   vmMuta.setGuestPropertyValue("/VirtualBox/GuestInfo/Net/1/V4/Netmask",   "255.255.255.0")
   closeSession(session)
-
   return 0
 
 
@@ -453,8 +452,8 @@ def vmStart(args):
     return 1
 
   attachDisk2(vm)   # Setup and attach bootstraping disk2
-  # VMs are built to call /usr/sbin/vmboot from /etc/rc.d/rc.local on every boot, then
-  # vmboot mounts disk2, from where it reads the hostname and IP address to assign the VM
+  # VMs are built to call /usr/sbin/vmnet from /etc/rc.d/rc.local on every boot, then
+  # vmnet mounts disk2, from where it reads the hostname and IP address to assign the VM
 
   # Launch VM process
   session = vboxmgr.getSessionObject(vbox)    # Get ISession object
@@ -473,7 +472,6 @@ def vmStart(args):
   if vm.state != const.MachineState_Running:   
     print(red("Error starting VM."))
     return 1
-
   return 0
 
 
@@ -548,7 +546,6 @@ def vmStop(args):
     cmdStr = "kill -9 `ps auxwww | grep \"VBoxHeadles[s] --comment " + vmName + \
              " --startvm\" | awk '{print $2}'` > /dev/null 2>&1"
     subprocess.call(cmdStr, shell=True)
-
   return 0
 
 
@@ -585,7 +582,7 @@ def vmSSH(args, verbose=True):
     return 1
 
   ssh = "ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
-  ssh += " -o UserKnownHostsFile=/dev/null -i " + vmprikey
+  ssh += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
   ip = getVmIp(vm)
   if not sshListening(ip):
@@ -602,7 +599,6 @@ def vmSSH(args, verbose=True):
     subprocess.call(cmdstr, shell=True)
   else:
     subprocess.call(cmdstr + " > /dev/null 2>&1", shell=True)
-
   return 0
 
 
@@ -617,7 +613,7 @@ def vmSSHCopy(source, vmName, destination, verbose=True):
     return 1
 
   scp = "scp -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
-  scp += " -o UserKnownHostsFile=/dev/null -i " + vmprikey
+  scp += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
   ip = getVmIp(vm)
   if not sshListening(ip):
@@ -631,7 +627,6 @@ def vmSSHCopy(source, vmName, destination, verbose=True):
     subprocess.call(cmdStr, shell=True)
   else:
     subprocess.call(cmdStr + " > /dev/null 2>&1", shell=True)
-
   return 0
 
 
@@ -674,7 +669,6 @@ def vmDelete(args):
   progress = vm.deleteConfig(vmMedia)
   while not progress.completed:
     time.sleep(0.1)
-
   return 0
 
 
@@ -807,7 +801,6 @@ def vmInfo(args):
     propDict[propNames[i]] = propValues[i]
   for key in sorted(propDict.iterkeys()):
     print(fmt.format(key, propDict[key]))
-
   return 0
 
 
@@ -912,7 +905,6 @@ def vmIp(args):
   if setVmIp(vm, ip) != 0:
     print("[%s] Unable to set IP to %s" % (whi(vmName), whi(ip)))
     return 1
-
   return 0
 
 
@@ -1103,7 +1095,6 @@ def vmProvision(args):
     if vmRun:
       print("[%s] VMRUN: %s" % (whi(vmName), whi(vmRun)))
       vmSSH([vmName, vmRun])
-
   return 0
 
 
@@ -1179,280 +1170,24 @@ def imgImport(args):
   return 0
 
 
-def mountISO(isoFile, isoMount):
-  # Evidently, this is the only way to mount a hybrid ISO on macos:
-  # 1. Capture last mounted disk device (/dev/disk1, etc)
-  # 2. Attach the ISO. Should attach to next available device.
-  # 3. Ensure mounted device is new, NOT the previous one
-  # 4. Mount the last device to specified mount point
-  lastDisk1 = lastDisk2 = None
-  lastMounted = "diskutil list | awk '/^\/dev\/disk/ {print $1}' | sort | tail -1"
-  lastDisk1 = subprocess.check_output(lastMounted, shell=True).rstrip('\r\n')
-  attachISO = "hdiutil attach -quiet -noverify -nomount \"{}\" 2>&1".format(isoFile)
-  if subprocess.call(attachISO, shell=True) != 0:
-    print("Error running: {}".format(attachISO))
-    return ""
-  lastDisk2 = subprocess.check_output(lastMounted, shell=True).rstrip('\r\n')
-  if lastDisk1 == None or lastDisk1 == lastDisk2:
-    print("Error with 2nd run of: {}".format(lastMounted))
-    return ""
-  mountISO = "mount_cd9660 {} \"{}\"".format(lastDisk2, isoMount)
-  if subprocess.call(mountISO, shell=True) != 0:
-    print("Error running: {}".format(mountISO))
-    return ""
-  return lastDisk2
-
-
-def unmountISO(isoMount, device):
-  # The only evident way to unmount a hybrid ISO on macos requires these 2 commands:
-  umountISO = "umount \"{}\" ; diskutil eject {} > /dev/null 2>&1".format(isoMount, device)
-  if subprocess.call(umountISO, shell=True) != 0:
-    print("Error unmounting \"{}\"".format(isoFile))
-    return 1
-  return 0
-
-
-def imgCreateFromISO(imgFile, isoFile):
-  # First things first
-  from distutils.spawn import find_executable
-  mkisofs = find_executable('mkisofs')
-  if mkisofs == None:
-    print("Can't find required 'mkisofs' binary. Instal with 'brew install cdrtools' or equivalent.")
+def imgCreate(args):
+  if len(args) < 2 or len(args) > 2:
+    Die(1, "{} imgcreate <imgName> <vmName>".format(prgName))
+  (imgName, vmName) = args
+  if not imgName.lower().endswith('.ova'):
+    print("Image name must have an '.ova' extension.")
     return 1
 
-  # Create OVA from given ISO file, by doing a CentOS Kickstart install
-  img = whi(os.path.basename(imgFile))
-  iso = whi(os.path.basename(isoFile))
-  print("Creating {} will take about 10 minutes depending on below activities:\n"
-        "1. Remastering {} for an unattended install.\n"
-        "2. Building a temporary VM using the remastered ISO.\n"
-        "3. Creating the new OVA from that temporary VM.".format(img, iso))
-  response = raw_input("Ready to proceed? [y/n]: ")
-  if response != "y":
+  imgFile = os.path.join(vmhome, imgName)
+  if os.path.isfile(imgFile):
+    print("Image file {} already exists.".format(imgFile))
     return 1
 
-  # Generate a random name for Kickstart VM
-  ksVMName = ""
-  while not ksVMName:
-    ksVMName = "temp_" + ''.join([random.choice(string.ascii_letters + string.digits) for n in xrange(10)])
-    try:
-      ksVM = vbox.findMachine(ksVMName)  # Get IMachine object (read-only)
-      ksVMName = ""
-      continue                           # This VM name already exists. Try again.
-    except:
-      break                              # Generated name will not clash with existing VMs
- 
-  print("START {}".format(time.strftime("%H:%M:%S", time.localtime())))
-
-  # Define isoFileKS variable now so we can announce the process, but it's actually created later
-  isoFileKS = os.path.join(vmhome, os.path.basename(isoFile)[:-4] + '-KS.iso')
-  print("Remastering original ISO into {}".format(os.path.basename(isoFileKS)))
-
-  # Create temp ISO mount dir
-  isoMount = os.path.join(vmhome, 'iso')
-  if os.path.isdir(isoMount):    # Remove previous one, if still around for some reason
-    shutil.rmtree(isoMount)
-  os.makedirs(isoMount)   
-
-  # Mount ISO
-  device = mountISO(isoFile, isoMount)
-  if device == "":
-    return 1
-
-  # Duplicate ISO content 
-  isoMountKS = isoMount + "KS"   # Temp dir for building ISO KS
-  if os.path.isdir(isoMountKS):  # Remove previous one, if still around for some reason
-    shutil.rmtree(isoMountKS)
-  os.makedirs(isoMountKS)
-  rsyncISO = "rsync -av \"{}/\" \"{}/\" > /dev/null 2>&1".format(isoMount, isoMountKS)
-  rc = subprocess.call(rsyncISO, shell=True)
-  if rc == 23:
-    ### TEMP BYPASS: See https://bugs.centos.org/view.php?id=16431
-    print(yel("WARNING: This ISO has files that are only owned by root!"))
-  elif rc != 0:
-    print("Error [{}] running: {}".format(rc, rsyncISO))
-    return 1
-  else:
-    print("rsync ran fine")
-  chmodISO = "chmod -R u+w \"{}\"".format(isoMountKS)
-  if subprocess.call(chmodISO, shell=True) != 0:
-    print("Error running: {}".format(chmodISO))
-    return 1
-
-  # Unmount ISO
-  if unmountISO(isoMount, device) != 0:
-    return 1
-  
-  os.rmdir(isoMount)
-
-  # Modify isolinux.cfg to boot into Kickstart, and reduce prompt wait time, etc
-  sedInPlace(isoMountKS + "/isolinux/isolinux.cfg", r"^default.*$", "default ks")
-  sedInPlace(isoMountKS + "/isolinux/isolinux.cfg", r"^timeout.*$", "timeout 0")
-  sedInPlace(isoMountKS + "/isolinux/isolinux.cfg", r"^.*prompt.*$", "prompt 0")
-  with open(isoMountKS + "/isolinux/isolinux.cfg", "a") as f:
-    f.write("label ks\n  kernel vmlinuz\n  append ks=cdrom:/vmbin/ks.cfg initrd=initrd.img\n")
-
-  # Copy special VM management files to this new ISO
-  rsyncVMBin = "rsync -av \"{}/vmbin/\" \"{}/vmbin/\" > /dev/null 2>&1".format(vmhome, isoMountKS)
-  if subprocess.call(rsyncVMBin, shell=True) != 0:
-    print("Error running: {}".format(rsyncVMBin))
-    return 1
-
-  # Use root password defined by this program
-  sedInPlace(isoMountKS + "/vmbin/ks.cfg", r"^rootpw password", "rootpw " + vmpwd)
-
-  # Create the new Kickstart ISO = isoFileKS
-  mkISO = "cd \"{}\"/ && {} -quiet -o \"{}\"".format(isoMountKS, mkisofs, isoFileKS) + \
-          " -b isolinux/isolinux.bin -c isolinux/boot.cat" + \
-          " -no-emul-boot -boot-load-size 4 -boot-info-table -R -J -T . 2>&1"
-  if subprocess.call(mkISO, shell=True) != 0:
-    print("Error running: {}".format(mkISO))
-    return 1
-
-  # Remove temp KS dir
-  shutil.rmtree(isoMountKS)
-
-  print("Creating temporary VM using the new remastered Kickstart ISO")
-  try:                          # Create empty/mutable IMachine object
-    settingsFile = ''           # Null string so composeMachineFilename gets called automatically 
-    groups = '/'                # '/' is REQUIRED for the default no-group association
-    osTypeId = 'RedHat_64'      # Default for these CentOS 64bit images
-    flags = ''                  # Null string is fine for a new machine
-    vm = vbox.createMachine(settingsFile, ksVMName, groups, osTypeId, flags)
-  except:
-    print("Error creating basic VM {}".format(ksVMName))
-    return 1
-   
-  # Set these default settings
-  vm.CPUCount    = 2
-  vm.memorySize  = 2048
-  vm.HPETEnabled = True
-  vm.RTCUseUTC   = True
-  vm.BIOSSettings.IOAPICEnabled = True
-  vm.BIOSSettings.bootMenuMode  = const.BIOSBootMenuMode_Disabled
-
-  # Set networking to HostOnly
-  # HostOnly uses NIC0 (with NAT) for routing external traffic (with no SSH port forwarding)
-  nic0 = vm.getNetworkAdapter(0)
-  nic0.enabled           = True
-  nic0.attachmentType    = const.all_values('NetworkAttachmentType')['NAT'] 
-  nic0.adapterType       = const.all_values('NetworkAdapterType')[vbnictype]  # Global variable
-  nic0.bridgedInterface  = None
-  nic0.hostOnlyInterface = None
-  nic0.NATEngine.DNSPassDomain = True
-  nic0.NATEngine.DNSUseHostResolver = True
-  # But it uses NIC1 (with HostOnly) as its primary adapter
-  nic1 = vm.getNetworkAdapter(1)  
-  nic1.enabled           = True
-  nic1.attachmentType    = const.all_values('NetworkAttachmentType')['HostOnly'] 
-  nic1.adapterType       = const.all_values('NetworkAdapterType')[vbnictype]  # Global variable
-  nic1.bridgedInterface  = None
-
-  # Create hdd/dvd media, and sets up storage controllers
-  diskFile = os.path.join(vbhome, ksVMName, ksVMName + '-disk1.vmdk')
-  hddMedium = vbox.createMedium('VMDK', diskFile, const.AccessMode_ReadWrite, const.DeviceType_HardDisk)
-  # Create IMedium object for DVD
-  forceNewUuid = False
-  dvdMedium    = vbox.openMedium(isoFileKS, const.DeviceType_DVD, const.AccessMode_ReadOnly, forceNewUuid)
-  hddSize      = vmhddsize    # Global variable
-  hddVariant   = [const.MediumVariant_Standard] 
-  progress     = hddMedium.createBaseStorage(hddSize, hddVariant) # Create hdd and get IProgress object
-  while not progress.completed:
-    time.sleep(0.1)
-  if not hddMedium.id:
-    print("Error creating 8GB disk1 file")
-    return 1
-
-  # Setup SATA storage controller
-  ctrlSATA = vm.addStorageController('SATA Controller', const.StorageBus_SATA)
-  ctrlSATA.controllerType = const.StorageControllerType_IntelAhci
-  ctrlSATA.portCount = 4
-  ctrlSATA.useHostIOCache = True
-  vm.setStorageControllerBootable('SATA Controller', True)
-
-  # Create this temporary VM
-  vbox.registerMachine(vm)
-  
-  # Attach DVD and HDDs. Can only be done after registering machine
-  (vmMuta, session) = openSession(vm, const.LockType_Write)
-  vmMuta.attachDevice('SATA Controller', 0, 0, const.DeviceType_HardDisk, hddMedium) 
-  vmMuta.attachDevice('SATA Controller', 2, 0, const.DeviceType_DVD, dvdMedium) 
-  vmMuta.setBootOrder(1, const.DeviceType_DVD)  # Make DVD primary AND only boot dev to do KS install
-  vmMuta.setBootOrder(2, const.DeviceType_Null)
-  vmMuta.setBootOrder(3, const.DeviceType_Null)
-  vmMuta.setBootOrder(4, const.DeviceType_Null)
-  closeSession(session)
-
-  # Let's make sure this temp VM gets a proper IP address
-  ip = getVmIp(vm)                         # Get officially defined IP
-  if not validIP(ip) or not uniqueIP(ip):  # Ensure we have a good IP address
-    ip = vmdefip                           # Use global default IP if necessary
-    if not uniqueIP(ip):                   # Call nextUniqueIP if global default is already taken
-      ip = nextUniqueIP(ip)
-  setVmIp(vm, ip)                          # Store IP in official location and setup net devices
-  # We're trusting setVmIp won't failed after so many checks 
-
-  # Initiate kickstart build of temp VM
-  vmStart([vm.name, 'g'])
-
-  # Then wait at most 10 min for VM to poweroff after Kickstart completes
-  timeOut = time.time() + 600
-  lapCount = 0
-  while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:   
-    sys.stdout.write('.') ; sys.stdout.flush()  # Dot the progress
-    time.sleep(0.5)
-    lapCount += 1
-    if lapCount % 78 == 0:
-      print
-  if lapCount % 78 != 0:
-    print
-
-  if vm.state != const.MachineState_PoweredOff:
-    print("Aborting. Seems like Kickstart install is hung.")
-    return 1
-
-  if vm.sessionState != const.SessionState_Unlocked:
-    closeSession(session)
-    if vm.sessionState != const.SessionState_Unlocked:
-      print(red("Aborting. Unable to close last VM session."))
-      return 1
-  
-  # By now Kickstart should have completed and VM should be powered off
-
-  # # Common DEBUG area
-  # print("vm.state = %s" % enumElem('MachineState', vm.state)
-  # print("last session.state = %s" % enumElem("SessionState", session.state)
-  # return 1
-
-  # Lets modify the VM so it boots off HDD, and clean things up
-  (vmMuta, session) = openSession(vm, const.LockType_Write)
-  vmMuta.detachDevice('SATA Controller',  2, 0)                 # Detaching KS ISO file from DVD drive
-  vmMuta.setBootOrder(1, const.DeviceType_HardDisk)  # Now make HDD primary boot device
-  vmMuta.setBootOrder(2, const.DeviceType_Null)
-  vmMuta.setBootOrder(3, const.DeviceType_Null)
-  vmMuta.setBootOrder(4, const.DeviceType_Null)  
-  progress = hddMedium.compact()                     # Compact disk medium
-  while not progress.completed:
-    time.sleep(0.1)
-  dvdMedium.close()               # Close kickstart ISO file
-  os.remove(isoFileKS)            # Also remove it
-  closeSession(session)
-
-  # Call this same function to create the OVA from the temp VM we just built
-  print("\nCreating OVA {}\n".format(imgFile))
-  imgCreateFromVM(imgFile, ksVMName)
-  vmDelete([ksVMName, "f"])
-
-  print("END   {}".format(time.strftime("%H:%M:%S", time.localtime())))
-  return 0
-
-
-def imgCreateFromVM(imgFile, vmName):
   # Try getting existing IMachine object (read-only)
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("There is no existing VM or ISO file named '{}'.".format(vmName))
+    print("There is no existing VM named '{}'.".format(vmName))
     return 1
 
   if vm.state == const.MachineState_Running:   
@@ -1479,42 +1214,25 @@ def imgCreateFromVM(imgFile, vmName):
     if lapCount % 78 == 0:
       print
   print
-
   return 0
 
 
-def imgCreate(args):
-  if len(args) < 2 or len(args) > 2:
-    Die(1, "{} imgcreate <imgName> <ISO|vmName>".format(prgName))
-  (imgName, imgSrc) = args
-  if not imgName.lower().endswith('.ova'):
-    print("Image name must have an '.ova' extension.")
-    return 1
-
-  imgFile = os.path.join(vmhome, imgName)
-  if os.path.isfile(imgFile):
-    print("Image file {} already exists.".format(imgFile))
-    return 1
-
-  # Call respective function based on given source
-  if imgSrc.lower().endswith('.iso') and os.path.isfile(imgSrc):
-    return imgCreateFromISO(imgFile, os.path.abspath(imgSrc))  # Create from ISO file
-  else:
-    return imgCreateFromVM(imgFile, imgSrc)                    # Create from named VM
-
-
-def sedInPlace(filePath, fromRegex, toRegex, ignoreComments = True):
-  if not os.path.isfile(filePath):
-    print("File '{}' doesn't exist".format(filePath))
-    return 1
-  with open(filePath, "r") as f:
-    lines = f.readlines()
-  with open(filePath, "w") as f:
-    for line in lines:
-      if ignoreComments and line[0] == "#":
-        f.write(line)   # Leave comment lines alone
-        continue
-      f.write(re.sub(fromRegex, toRegex, line))
+def imgDawn():
+  p = whi(prgName)
+  print(
+    "To create a brand new OVA image, not from an existing VM, first make sure you\n"
+    "have {} and {} installed then do the following:\n\n"
+    "1. git clone https://github.com/lencap/osimages\n"
+    "2. cd osimages/centos\n"
+    "3. packer validate centos7.7.1908-vm-ova.json\n"
+    "4. packer build centos7.7.1908-vm-ova.json\n"
+    "5. {} imgimp output-virtualbox-iso/centos7.7.1908-vm.ova\n"
+    "6. {} imglist To confirm image is then available\n\n"
+    "Note that you can use any of the {} packer templates, or you can\n"
+    "of course create your very own. But do study existing templates, and the\n"
+    "actual {} code to ensure your images satisfy the essential requirements."
+    .format(whi('git'), whi('packer'), p, p, whi('*-vm-ova*'), p)
+  )
   return 0
 
 
@@ -1529,17 +1247,13 @@ def genFile(code, filename, mode):
 
 
 def main(args=None):
-  # Ensure these 2 essential directories exist
-  if not os.path.isdir(vmhome):
+  if not os.path.isdir(vmhome):   # Ensure config directory exists
     os.makedirs(vmhome)
-  if not os.path.isdir(vmhome + '/vmbin'):
-    os.makedirs(vmhome + '/vmbin')
 
   # Generate essential files on every run to always keep them fresh
-  genFile("#02=>", vmprikey, 0o600)
-  subprocess.call("ssh-keygen -f {} -y > {}".format(vmprikey,vmpubkey), shell=True)
-  genFile("#03=>", vmksconf, 0o644)
-  genFile("#06=>", vmbootrc, 0o755)
+  genFile("#02=>", vmsshpri, 0o600)
+  genFile("#03=>", vmnet, 0o755)
+  subprocess.call("ssh-keygen -f {} -y > {}".format(vmsshpri,vmsshpub), shell=True)
 
   # Initialized VirtualBox. Note global variables
   global vboxmgr, const, vbox, vbhome
@@ -1566,6 +1280,7 @@ def main(args=None):
     'ip':         lambda: vmIp(sys.argv[2:]),
     'imglist':    lambda: imgList(),
     'imgcreate':  lambda: imgCreate(sys.argv[2:]),
+    'imgdawn':    lambda: imgDawn(),
     'imgdel':     lambda: imgDelete(sys.argv[2:]),
     'imgimp':     lambda: imgImport(sys.argv[2:]),
     'netlist':    lambda: netList(),
@@ -1615,8 +1330,8 @@ if __name__ == '__main__':
 #01=>#netip   = 10.11.12.2
 #01=>#cpus    = 1
 #01=>#memory  = 1024
-#01=>#vmcopy  = "./local-host-file/puppet-bootstrap.sh /vmboot/puppet-bootstrap.sh"
-#01=>#vmrun   = "/vmboot/puppet-bootstrap.sh"
+#01=>#vmcopy  = "./local-host-file/puppet-bootstrap.sh /vmnet/puppet-bootstrap.sh"
+#01=>#vmrun   = "/vmnet/puppet-bootstrap.sh"
 #01=>
 #01=>#[dev2]
 #01=>#image   = cos72.ova
@@ -1652,173 +1367,73 @@ if __name__ == '__main__':
 #02=>ADiALhM7Gqxc0eIMPSw4REhLiS2XNlTSL8fxPHMVJSIuPn+SXw==
 #02=>-----END RSA PRIVATE KEY-----
 
-#03=># ks.cfg: CentOS 7 Kickstart automated installation file
-#03=>
-#03=># GENERAL
-#03=>install
-#03=>text
-#03=>cdrom
-#03=>poweroff
-#03=>unsupported_hardware
-#03=>lang en_US.UTF-8
-#03=>keyboard us
-#03=>timezone --utc America/New_York
-#03=>rootpw password
-#03=>firewall --disabled
-#03=>selinux --disabled
-#03=>authconfig --useshadow --passalgo=sha512
-#03=>
-#03=># DISK
-#03=>clearpart --all --drives=sda
-#03=>zerombr 
-#03=>part / --fstype=ext4 --grow --size=1 --asprimary
-#03=>bootloader --location=mbr --driveorder=sda --append="nomodeset crashkernel=auto rhgb quiet" --timeout=0
-#03=>
-#03=># NETWORK
-#03=>network --onboot=yes --device=enp0s3 --noipv6 --bootproto=static --ip=10.0.2.15 --netmask=255.255.255.0 --gateway=10.0.2.2 --nameserver=10.0.2.3
-#03=>network --onboot=yes --device=enp0s8 --noipv6 --bootproto=static --ip=10.12.13.2 --netmask=255.255.255.0
-#03=>
-#03=># PACKAGES
-#03=>%packages --nobase --excludedocs
-#03=>@core --nodefaults
-#03=>-aic94xx-firmware*
-#03=>-alsa-*
-#03=>-btrfs-progs*
-#03=>-firewalld
-#03=>-iprutils
-#03=>-ivtv*
-#03=>-iwl*firmware
-#03=>-mariadb-libs
-#03=>-NetworkManager*
-#03=>-parted
-#03=>-wpa_supplicant
-#03=>-xfsprogs
-#03=>curl
-#03=>iputils
-#03=>vim-minimal
-#03=>%end
-#03=>
-#03=># POST1
-#03=>%post --nochroot --log=/mnt/sysimage/root/ks-post1.log
 #03=>#!/bin/bash
-#03=># ks-post1.sh
-#03=># Copy essential files from ISO source to the new system. Note non-chrooted env
-#03=>cp -va /run/install/repo/vmbin /mnt/sysimage/root/bin
-#03=>%end
-#03=>
-#03=># POST2
-#03=>%post --log=/root/ks-post2.log
-#03=>#!/bin/bash
-#03=># ks-post2.sh
-#03=># Make all other post-installation updates
-#03=>
-#03=>echo "==> START `/bin/date +%H:%M:%S`"
-#03=>
-#03=>echo "==> Setting up root bin scripts, bashrc, vimrc, SSH keys, etc"
-#03=>chmod -vR 755 /root/bin
-#03=>chown -vR root:root /root/bin
-#03=>rm -vrf /root/bin/TRANS.TBL
-#03=>mv /root/bin/root.bashrc /root/.bashrc && chmod 644 /root/.bashrc
-#03=>printf "\" .vimrc\nsyntax on\nhi comment ctermfg=blue\nau BufRead,BufNewFile *.pp setfiletype puppet\nset ruler\n" > /root/.vimrc
-#03=>chown -vR root:root /root/.vimrc
-#03=>mkdir /root/.ssh && chmod 700 /root/.ssh
-#03=>mv /root/bin/vmkey.pub /root/.ssh/authorized_keys
-#03=>mv /root/bin/vmboot /usr/sbin/
-#03=>chmod 644 /root/.ssh/authorized_keys
-#03=>rm -rf /root/bin
-#03=>
-#03=>echo "==> Disabling SSH DNS reverse lookup"
-#03=>sed -i "s;^.*UseDNS yes;UseDNS no;g" /etc/ssh/sshd_config
-#03=>
-#03=>echo "==> Installing other essential CentOS 7 packages"
-#03=>rpm -ivh http://pkgs.repoforge.org/rpmforge-release/rpmforge-release-0.5.3-1.el7.rf.x86_64.rpm
-#03=>rpm -Uvh http://mirror.cs.princeton.edu/pub/mirrors/fedora-epel/7/x86_64/e/epel-release-7-6.noarch.rpm
-#03=>yum -y install yum-utils
-#03=>yum-config-manager --enable rpmforge-extras
-#03=>yum -y install bind-utils bzip2 lsof nmap-ncat ntp ntpdate rsync sysstat tcpdump time
-#03=>
-#03=>echo "==> Refreshing all packages"
-#03=>yum -y -x 'kernel*' update
-#03=>
-#03=>echo "==> Setup bootstrapping. Have /etc/rc.d/rc.local call vmboot"
-#03=>chmod +x /etc/rc.d/rc.local
-#03=>echo vmboot >> /etc/rc.d/rc.local
-#03=>
-#03=>echo "==> Help deduce disk size by only keeping English locales"
-#03=>localedef --list-archive | grep -v -i ^en | xargs localedef --delete-from-archive
-#03=>mv /usr/lib/locale/locale-archive /usr/lib/locale/locale-archive.tmpl
-#03=>build-locale-archive
-#03=>
-#03=>echo "==> END `/bin/date +%H:%M:%S`"
-#03=>%end
-
-#06=>#!/bin/bash
-#06=># vmboot
-#06=>LOGFILE=/root/`basename $0`.log
-#06=>echo "Called as  : ${0}" | tee $LOGFILE
-#06=>echo "Stopping network service ..." | tee -a $LOGFILE
-#06=>systemctl stop network | tee -a $LOGFILE
-#06=>echo "Mounting disk2 and applying hostname and IP address ..." | tee -a $LOGFILE
-#06=>[[ -z "`lsblk -lp | grep '/dev/sdb1'`" ]] && echo "Fatal. Missing /dev/sdb1 disk2!" && exit 1
-#06=>mkdir -pv /vmboot && mount -v /dev/sdb1 /vmboot
-#06=>newHostname=`cat /vmboot/hostname.txt`
-#06=>ipAddr=`cat /vmboot/ip.txt`
-#06=>echo "Hostname   : $newHostname" | tee -a $LOGFILE
-#06=>echo "IPAddress  : $ipAddr" | tee -a $LOGFILE
-#06=>nic0=eth0 nic1=eth1   # nic0=enp0s3 nic1=enp0s8
-#06=>nic0File=/etc/sysconfig/network-scripts/ifcfg-$nic0
-#06=>nic1File=/etc/sysconfig/network-scripts/ifcfg-$nic1
-#06=>delval () { sed -i "/${2}=/d" ${1} ; }
-#06=>setval () {
-#06=>  [[ ! -e "${1}" ]] && touch ${1}
-#06=>  if [[ -z "`grep ${2} ${1}`" ]]; then
-#06=>    echo "${2}=\"${3}\"" >> ${1}
-#06=>    return 0
-#06=>  fi
-#06=>  OLD=`grep "^${2}=" ${1} | awk -F'=' '{print $2}'`
-#06=>  sed -i "s;${2}=$OLD;${2}=\"${3}\";g" ${1}
-#06=>}
-#06=>if [[ -n "$ipAddr" ]] ; then
-#06=>  echo Configuring nic0 with VirtualBox standard NAT static IP settings
-#06=>  setval $nic0File DEVICE $nic0
-#06=>  setval $nic0File BOOTPROTO none
-#06=>  setval $nic0File PEERDNS yes
-#06=>  setval $nic0File DNS1 10.0.2.3
-#06=>  setval $nic0File GATEWAY 10.0.2.2
-#06=>  setval $nic0File IPADDR 10.0.2.15
-#06=>  setval $nic0File NETMASK 255.255.255.0
-#06=>  setval $nic0File IPV6INIT no
-#06=>  setval $nic0File NM_CONTROLLED no
-#06=>  setval $nic0File ONBOOT yes
-#06=>  setval $nic0File TYPE Ethernet
-#06=>  setval $nic0File HWADDR `cat /sys/class/net/$nic0/address`
-#06=>  setval /etc/sysconfig/network GATEWAY 10.0.2.2
-#06=>  echo "Bringing up '$nic0' ..." | tee -a $LOGFILE
-#06=>  ifup $nic0 | tee -a $LOGFILE
-#06=>  echo Configuring nic1 with provided hostonly IP
-#06=>  touch $nic1File
-#06=>  cat /dev/null > $nic1File
-#06=>  setval $nic1File DEVICE $nic1
-#06=>  setval $nic1File BOOTPROTO none
-#06=>  delval $nic1File PEERDNS
-#06=>  delval $nic1File DNS1
-#06=>  delval $nic1File GATEWAY
-#06=>  setval $nic1File IPADDR $ipAddr
-#06=>  setval $nic1File NETMASK 255.255.255.0
-#06=>  setval $nic1File IPV6INIT no
-#06=>  setval $nic1File NM_CONTROLLED no
-#06=>  setval $nic1File ONBOOT yes
-#06=>  setval $nic1File TYPE Ethernet
-#06=>  setval $nic1File HWADDR `cat /sys/class/net/$nic1/address`
-#06=>  echo "Bringing up '$nic1' ..." | tee -a $LOGFILE
-#06=>  ifup $nic1 | tee -a $LOGFILE
-#06=>else
-#06=>  echo "IP=$ipAddr" | tee -a $LOGFILE
-#06=>  exit 1
-#06=>fi
-#06=>echo "Reloading and restarting network service ..." | tee -a $LOGFILE
-#06=>systemctl stop network | tee -a $LOGFILE
-#06=>systemctl reload network | tee -a $LOGFILE
-#06=>systemctl start network | tee -a $LOGFILE
-#06=>echo "Setting hostname to '$newHostname' ..." | tee -a $LOGFILE
-#06=>hostnamectl set-hostname $newHostname | tee -a $LOGFILE
+#03=># vmnet
+#03=>LOGFILE=/root/`basename $0`.log
+#03=>echo "Called as  : ${0}" | tee $LOGFILE
+#03=>echo "Stopping network service ..." | tee -a $LOGFILE
+#03=>systemctl stop network | tee -a $LOGFILE
+#03=>echo "Mounting disk2 and applying hostname and IP address ..." | tee -a $LOGFILE
+#03=>[[ -z "`lsblk -lp | grep '/dev/sdb1'`" ]] && echo "Fatal. Missing /dev/sdb1 disk2!" && exit 1
+#03=>mkdir -pv /vmnet && mount -v /dev/sdb1 /vmnet
+#03=>newHostname=`cat /vmnet/hostname.txt`
+#03=>ipAddr=`cat /vmnet/ip.txt`
+#03=>echo "Hostname   : $newHostname" | tee -a $LOGFILE
+#03=>echo "IPAddress  : $ipAddr" | tee -a $LOGFILE
+#03=>nic0=eth0 nic1=eth1   # nic0=enp0s3 nic1=enp0s8
+#03=>nic0File=/etc/sysconfig/network-scripts/ifcfg-$nic0
+#03=>nic1File=/etc/sysconfig/network-scripts/ifcfg-$nic1
+#03=>delval () { sed -i "/${2}=/d" ${1} ; }
+#03=>setval () {
+#03=>  [[ ! -e "${1}" ]] && touch ${1}
+#03=>  if [[ -z "`grep ${2} ${1}`" ]]; then
+#03=>    echo "${2}=\"${3}\"" >> ${1}
+#03=>    return 0
+#03=>  fi
+#03=>  OLD=`grep "^${2}=" ${1} | awk -F'=' '{print $2}'`
+#03=>  sed -i "s;${2}=$OLD;${2}=\"${3}\";g" ${1}
+#03=>}
+#03=>if [[ -n "$ipAddr" ]] ; then
+#03=>  echo Configuring nic0 with VirtualBox standard NAT static IP settings
+#03=>  setval $nic0File DEVICE $nic0
+#03=>  setval $nic0File BOOTPROTO none
+#03=>  setval $nic0File PEERDNS yes
+#03=>  setval $nic0File DNS1 10.0.2.3
+#03=>  setval $nic0File GATEWAY 10.0.2.2
+#03=>  setval $nic0File IPADDR 10.0.2.15
+#03=>  setval $nic0File NETMASK 255.255.255.0
+#03=>  setval $nic0File IPV6INIT no
+#03=>  setval $nic0File NM_CONTROLLED no
+#03=>  setval $nic0File ONBOOT yes
+#03=>  setval $nic0File TYPE Ethernet
+#03=>  setval $nic0File HWADDR `cat /sys/class/net/$nic0/address`
+#03=>  setval /etc/sysconfig/network GATEWAY 10.0.2.2
+#03=>  echo "Bringing up '$nic0' ..." | tee -a $LOGFILE
+#03=>  ifup $nic0 | tee -a $LOGFILE
+#03=>  echo Configuring nic1 with provided hostonly IP
+#03=>  touch $nic1File
+#03=>  cat /dev/null > $nic1File
+#03=>  setval $nic1File DEVICE $nic1
+#03=>  setval $nic1File BOOTPROTO none
+#03=>  delval $nic1File PEERDNS
+#03=>  delval $nic1File DNS1
+#03=>  delval $nic1File GATEWAY
+#03=>  setval $nic1File IPADDR $ipAddr
+#03=>  setval $nic1File NETMASK 255.255.255.0
+#03=>  setval $nic1File IPV6INIT no
+#03=>  setval $nic1File NM_CONTROLLED no
+#03=>  setval $nic1File ONBOOT yes
+#03=>  setval $nic1File TYPE Ethernet
+#03=>  setval $nic1File HWADDR `cat /sys/class/net/$nic1/address`
+#03=>  echo "Bringing up '$nic1' ..." | tee -a $LOGFILE
+#03=>  ifup $nic1 | tee -a $LOGFILE
+#03=>else
+#03=>  echo "IP=$ipAddr" | tee -a $LOGFILE
+#03=>  exit 1
+#03=>fi
+#03=>echo "Reloading and restarting network service ..." | tee -a $LOGFILE
+#03=>systemctl stop network | tee -a $LOGFILE
+#03=>systemctl reload network | tee -a $LOGFILE
+#03=>systemctl start network | tee -a $LOGFILE
+#03=>echo "Setting hostname to '$newHostname' ..." | tee -a $LOGFILE
+#03=>hostnamectl set-hostname $newHostname | tee -a $LOGFILE
