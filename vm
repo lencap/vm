@@ -3,8 +3,6 @@
 # A simpler version of VBoxManage.
 
 import os, sys, time, shutil, string   # The usual suspects
-import random
-import re
 import socket
 import subprocess
 import tarfile
@@ -28,7 +26,7 @@ except ImportError:
   Die(1, "Missing {} module. Is VirtualBox installed?".format(whi('vboxapi')))
 
 # Global variables
-prgVer    = 'v2.4.0'
+prgVer    = 'v2.4.1'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
 vmsshpri  = vmhome + '/vmkey'              # Global private SSH key
