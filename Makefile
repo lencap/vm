@@ -1,5 +1,5 @@
 TARGET  := vm
-VERSION := 2.2.6
+VERSION := 2.4.1
 
 .PHONY: default release install clean
 
@@ -14,4 +14,4 @@ install:
 	./install.sh $(TARGET)
 
 clean:
-	rm -f $(TARGET)-$(VERSION).tar.gz
+	rm -f $(TARGET)-*.tar.gz
