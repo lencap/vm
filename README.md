@@ -16,7 +16,7 @@ Either `brew install lencap/tools/vm` or `make install`
 
 ## Usage
 ```
-Simple CentOS VM Manager v2.4.3
+Simple CentOS VM Manager v2.4.4
 vm list                               List all VMs
 vm create    <vmName> <imgName>       Create VM using imgName
 vm del       <vmName> [f]             Delete VM. Force option

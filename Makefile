@@ -1,5 +1,5 @@
 TARGET  := vm
-VERSION := 2.4.3
+VERSION := 2.4.4
 
 .PHONY: default release install clean
 

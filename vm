@@ -29,7 +29,7 @@ except ImportError:
   Die(1, "Missing {} module. Is VirtualBox installed?".format(whi('vboxapi')))
 
 # Global variables
-prgVer    = 'v2.4.3'
+prgVer    = 'v2.4.4'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
 vmsshpri  = vmhome + '/vmkey'              # Global private SSH key
@@ -1110,7 +1110,7 @@ def imgList():
     if f.lower().endswith(".ova"):
       fList.append(f)
   if len(fList) < 1: return 1   # No OVA files to list, so return empty-handed
-  fmt = "{:20}  {:54}{}"
+  fmt = "{:<34}{:<54}{}"
   print(fmt.format('NAME', 'PATH', 'SIZE'))
   for fName in fList:
     fPath = os.path.join(vmhome, fName)
