@@ -1,5 +1,5 @@
 TARGET  := vm
-VERSION := 2.4.1
+VERSION := 2.4.3
 
 .PHONY: default release install clean
 
@@ -11,7 +11,7 @@ release:
 	shasum -a 256 $(TARGET)-$(VERSION).tar.gz
 
 install:
-	./install.sh $(TARGET)
+	install $(TARGET) /usr/local/bin/$(TARGET)
 
 clean:
 	rm -f $(TARGET)-*.tar.gz

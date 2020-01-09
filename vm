@@ -2,6 +2,9 @@
 # vm
 # A simpler version of VBoxManage.
 
+# TODO
+# - Allow switching ssh key, and user
+
 import os, sys, time, shutil, string   # The usual suspects
 import socket
 import subprocess
@@ -26,7 +29,7 @@ except ImportError:
   Die(1, "Missing {} module. Is VirtualBox installed?".format(whi('vboxapi')))
 
 # Global variables
-prgVer    = 'v2.4.1'
+prgVer    = 'v2.4.3'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Program's configuration area
 vmsshpri  = vmhome + '/vmkey'              # Global private SSH key
@@ -67,7 +70,7 @@ def Usage():
 
 def dumpObj(obj):
   for attr in dir(obj):
-    print("obj.%s = %s" % (attr, getattr(obj, attr)))
+    print("obj.{} = {}".format(attr, getattr(obj, attr)))
 
 
 def enumElem(enumerate, element):
@@ -83,10 +86,10 @@ def openSession(vm, lockType):
   timeOut = time.time() + 5
   while timeOut > time.time() and vm.sessionState != const.SessionState_Unlocked:   
     time.sleep(0.01)
-  session = vboxmgr.getSessionObject(vbox)  # Get ISession objects
+  session = vboxmgr.getSessionObject(vbox)    # Get ISession objects
   vm.lockMachine(session, lockType)
   # LockType_Null=0   LockType_Shared=1   LockType_Write=2  LockType_VM=3
-  return session.machine, session           # Return mutable IMachine and ISession objects
+  return session.machine, session             # Return mutable IMachine and ISession objects
 
 
 def closeSession(session):
@@ -96,7 +99,7 @@ def closeSession(session):
 
 
 def getVmIp(vm):
-  ip = vm.getGuestPropertyValue('/vm/netip')  # Try official store location for this program
+  ip = vm.getGuestPropertyValue('/vm/netip')   # Try official store location for this program
   if ip == '' or ip == None:                   # If missing, try another area, used by others
     ip = vm.getGuestPropertyValue('/VirtualBox/GuestInfo/Net/1/V4/IP')
     if ip == '' or ip == None:                 # If missing still, try yet another area 
@@ -110,9 +113,9 @@ def aliveIP(ip):
   ret = subprocess.call('ping -c 1 -W 300 ' + ip + ' >/dev/null 2>&1', shell=True)
   # Send 1 packet and wait 300 milliseconds for a reply
   if ret == 0:
-    return True  # Zero means success
+    return True   # Zero means success
   else:
-    return False # Any other integer is a failure
+    return False  # Any other integer is a failure
 
 
 def uniqueIP(ip):
@@ -138,7 +141,7 @@ def setVmIp(vm, ip):
   # with the actual HostOnly interface attached to a vboxnet network 
 
   if not validIP(ip):
-    print("%s is an invalid IP address" % whi(ip))
+    print("{} is an invalid IP address".format(whi(ip)))
     return 1
   if ip.split('.')[3] == '1':
     print("IP ending in .1 is reserved for the vboxnet gateway itself")
@@ -147,11 +150,11 @@ def setVmIp(vm, ip):
     if vmTmp.name == vm.name:
       continue   # Skip this machine itself
     if getVmIp(vmTmp) == ip:
-      print("Error: IP %s is taken by %s" % (whi(ip), whi(vmTmp.name)))
+      print("Error: IP {} is taken by {}".format((whi(ip), whi(vmTmp.name))))
       return 1
   ipNet = '.'.join(ip.split('.')[:3])  # Derive IP's network address (the first 3 octects)
-  # If given IP address fits into an existing vboxnet network, then put it in that vboxnet
-  # else create a new vboxnet
+  # If given IP address fits into an existing vboxnet network, then
+  # put it in that vboxnet, else create a new vboxnet
   newHOName = newHOIP = None
   for tmpHO in getNetList():
     if ipNet == '.'.join(tmpHO.IPAddress.split('.')[:3]):  # vboxnet network exists so lets use it
@@ -181,7 +184,7 @@ def setVmIp(vm, ip):
   nic1.bridgedInterface  = None
   nic1.hostOnlyInterface = newHOName
 
-  # Store official IP address for this VM in its /vm/* guest property area
+  # Store official IP address for this VM in its /vm/* Guest Additions property area
   vmMuta.setGuestPropertyValue("/vm/netip", ip)
   vmMuta.setGuestPropertyValue("/VirtualBox/GuestInfo/Net/1/V4/IP",        ip)
   vmMuta.setGuestPropertyValue("/VirtualBox/GuestInfo/Net/1/V4/Broadcast", ".".join(ip.split(".")[:3]) + ".255")
@@ -193,12 +196,17 @@ def setVmIp(vm, ip):
 def vmList():
   if len(vbox.getMachines()) == 0:
     return 0
-  print("%-30s %-5s %-6s %-12s %s" % ("NAME", "CPU", "MEM", "STATE", "SSH"))
+  fmt = "{:34}{:<5}{:<7}{:<12}{}"
+  print(fmt.format('NAME', 'CPU', 'MEM', 'STATE', 'SSH'))
   for vm in vbox.getMachines():
     state = enumElem("MachineState", vm.state)
     ip = getVmIp(vm)
     sshConn = vmuser + "@" + ip   # vmuser is global
-    print("%-30s %-5s %-6s %-12s %s" % (vm.name, vm.CPUCount, vm.memorySize, state, sshConn))
+    if len(vm.name) > 34:
+      name = name[:30] + '...'
+    else:
+      name = vm.name
+    print(fmt.format(name, vm.CPUCount, vm.memorySize, state, sshConn))
   return 0
 
 
@@ -366,7 +374,7 @@ def attachDisk2(vm):
 
   cmdStr = "hdiutil create -size 1m \"" + vmDrvDmg + "\" -fs MS-DOS -volname VMCONF > /dev/null 2>&1"
   if subprocess.call(cmdStr, shell=True) != 0:
-    print("Error creating %s" % (whi(vmDrvDmg)))
+    print("Error creating {}".format(whi(vmDrvDmg)))
     return 1
 
   # Mount drive and get the mount volume path
@@ -385,7 +393,7 @@ def attachDisk2(vm):
   # Unmount/eject drive
   cmdStr = "hdiutil eject \"" + vmDrvDevice + "\" > /dev/null 2>&1"
   if subprocess.call(cmdStr, shell=True) != 0:
-    print("Error ejecting %s:%s" % (red(vmDrvDevice), red(vmDrvMount)))
+    print("Error ejecting {}:{}".format(red(vmDrvDevice), red(vmDrvMount)))
     return 1
 
   # Convert DMG drive file to the VirtualBox VDI format
@@ -401,7 +409,7 @@ def attachDisk2(vm):
   hddMedium.refreshState()
   if hddMedium.state != const.MediumState_Created:
     print(hddMedium.id)
-    print("Error trying to set up the second drive:\n%s" % (red(hddMedium.lastAccessError)))
+    print("Error trying to set up the second drive:\n{}".format(red(hddMedium.lastAccessError)))
     return 1
 
   # Set up storage controller for this drive, attach the drive, and make it non-bootable
@@ -430,20 +438,20 @@ def vmStart(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("VM %s doesn't exist" % whi(vmName))
+    print("VM {} doesn't exist".format(whi(vmName)))
     return 1
 
   if vm.state == const.MachineState_Running:   
-    print("VM %s is already running" % whi(vmName))
+    print("VM {} is already running".format(whi(vmName)))
     return 1
 
   # Don't start VM unless IP is defined and is valid
   ipAddr = getVmIp(vm)               # Get officially defined IP
   if ipAddr == '<undefined>':
-    print("Error. IP address is %s" % whi('<undefined>'))
+    print("Error. IP address is {}".format(whi('<undefined>')))
     return 1
   if not validIP(ipAddr):
-    print("Error. IP address %s is invalid." % whi(ipAddr))
+    print("Error. IP address {} is invalid.".format(whi(ipAddr)))
     return 1
   ret = setVmIp(vm, ipAddr)  # Store IP in official location and setup net devices
   if ret != 0:               # Don't start if we couldn't set IP address
@@ -487,15 +495,15 @@ def vmStop(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("VM %s doesn't exist" % whi(vmName))
+    print("VM {} doesn't exist".format(whi(vmName)))
     return 1
 
   if vm.state == const.MachineState_Aborted:
-    print(whi("Aborted") + " state is synonymous with " + whi("PoweredOff") + " state")
+    print("{} state is synonymous with {} state".format(whi("Aborted"),whi("PoweredOff")))
     return 1
 
   if vm.state != const.MachineState_Running:   
-    print("%s is not running" % whi(vmName))
+    print("{} is not running".format(whi(vmName)))
     return 1
 
   if option == "normal": 
@@ -541,9 +549,9 @@ def vmStop(args):
 
   # Finally just kill the OS processes. Caveat: leaves VM in Aborted state
   if vm.state != const.MachineState_PoweredOff:
-    cmdStr = "kill -9 `ps auxwww | grep \"VBoxHeadles[s] --comment " + vmName + \
-             " --startvm\" | awk '{print $2}'` > /dev/null 2>&1"
-    subprocess.call(cmdStr, shell=True)
+    killVM = "kill -9 `ps auxwww | grep \"VBoxHeadles[s] --comment {}" \
+             " --startvm\" | awk '{print $2}'` > /dev/null 2>&1".format(vmName)
+    subprocess.call(killVM, shell=True)
   return 0
 
 
@@ -573,10 +581,10 @@ def vmSSH(args, verbose=True):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("%s doesn't exist" % whi(vmName))
+    print("{} doesn't exist".format(whi(vmName)))
     return 1
   if vm.state != const.MachineState_Running:   
-    print("%s is not running" % whi(vmName))
+    print("{} is not running".format(whi(vmName)))
     return 1
 
   ssh = "ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
@@ -584,19 +592,19 @@ def vmSSH(args, verbose=True):
 
   ip = getVmIp(vm)
   if not sshListening(ip):
-    print("VM unreachable via %s:%s" % (whi(ip), whi('22')))
+    print("VM unreachable via {}:{}".format((whi(ip), whi('22'))))
     return 1
 
   # Run remote SSH command or do interactive logon. Note, vmuser is global
   if cmd != None:
-    cmdstr = ssh + ' ' + vmuser + "@" + ip + " \"" + cmd + "\""
+    sshRun = ssh + " {}@{} \"{}\"".format(vmuser, ip, cmd)
   else:
-    cmdstr = ssh + ' ' + vmuser + "@" + ip
+    sshRun = ssh + " {}@{}".format(vmuser, ip)
 
   if verbose:
-    subprocess.call(cmdstr, shell=True)
+    subprocess.call(sshRun, shell=True)
   else:
-    subprocess.call(cmdstr + " > /dev/null 2>&1", shell=True)
+    subprocess.call(sshRun + " > /dev/null 2>&1", shell=True)
   return 0
 
 
@@ -604,10 +612,10 @@ def vmSSHCopy(source, vmName, destination, verbose=True):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("%s doesn't exist" % whi(vmName))
+    print("{} doesn't exist".format(whi(vmName)))
     return 1
   if vm.state != const.MachineState_Running:   
-    print("%s is not running" % whi(vmName))
+    print("{} is not running".format(whi(vmName)))
     return 1
 
   scp = "scp -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
@@ -615,16 +623,16 @@ def vmSSHCopy(source, vmName, destination, verbose=True):
 
   ip = getVmIp(vm)
   if not sshListening(ip):
-    print("VM unreachable via %s:%s" % (whi(ip), whi('22')))
+    print("VM unreachable via {}:{}".format((whi(ip), whi('22'))))
     return 1
 
   # Copy source file to vm:destination
-  cmdStr = scp + ' ' + source + ' ' + vmuser + "@" + ip + ":" + destination
+  sshCopy = scp + " {} {}@{}:{}".format(source, vmuser, ip, destination)
 
   if verbose:
-    subprocess.call(cmdStr, shell=True)
+    subprocess.call(sshCopy, shell=True)
   else:
-    subprocess.call(cmdStr + " > /dev/null 2>&1", shell=True)
+    subprocess.call(sshCopy + " > /dev/null 2>&1", shell=True)
   return 0
 
 
@@ -643,7 +651,7 @@ def vmDelete(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("%s doesn't exist" % whi(vmName))
+    print("{} doesn't exist".format(whi(vmName)))
     return 1
 
   if option == "normal": 
@@ -679,7 +687,7 @@ def vmInfo(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("VM " + whi(vmName) + " doesn't exist")
+    print("VM {} doesn't exist".format(whi(vmName)))
     return 1
 
   # The most important attributes
@@ -719,7 +727,6 @@ def vmInfo(args):
   attaches = vboxmgr.getArray(vm, 'mediumAttachments')
   if attaches:
     for a in attaches:
-      #print("%-40s  Controller: '%s'   port/device: %d:%d   type: %s" % ("Media", a.controller, a.port, a.device, enumElem("DeviceType", a.type)))
       print(fmt.format("Media", 'controller=' + a.controller + '   ' + 'port/dev=' + str(a.port) + ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
       medium = a.medium
       if a.type == const.DeviceType_HardDisk:
@@ -816,14 +823,15 @@ def netList():
   if len(netList) == 0:
     return 0
   else:
-    print("%-20s%-12s%-16s%-16s%s" % ("NAME", "DHCP", "GATEWAY", "NETMASK", "STATUS"))
+    fmt = "{:20}{:12}{:16}{:16}{}"
+    print(fmt.format("NAME", "DHCP", "GATEWAY", "NETMASK", "STATUS"))
     for net in netList:
       dhcpStatus = 'Disabled'
       if net.DHCPEnabled:
         dhcpStatus = 'Enabled'
-      print("%-20s%-12s%-16s%-16s%s" % (net.name, dhcpStatus, net.IPAddress, \
-             net.networkMask, enumElem("HostNetworkInterfaceStatus", net.status)))
-             # HostNetworkInterfaceStatus Unknown=0, Up=1, Down=2
+      print(fmt.format(net.name, dhcpStatus, net.IPAddress, \
+            net.networkMask, enumElem("HostNetworkInterfaceStatus", net.status)))
+            # HostNetworkInterfaceStatus Unknown=0, Up=1, Down=2
   return 0
 
 
@@ -833,13 +841,13 @@ def netAdd(args):
     return 1
   ip = args[0]
   if not validIP(ip):
-    print("%s is an invalid IP address" % whi(ip))
+    print("{} is an invalid IP address".format(whi(ip)))
     return 1
   if ip.split('.')[3] != "1":
     print("Gateway IP address must end in .1")
     return 1
   (progress, newNet) = vbox.host.createHostOnlyNetworkInterface()
-  # NOTE: Another API function poorly documented (not 100% clear it returns 2 values)
+  # NOTE: Another poorly documented API function (not 100% clear it returns 2 values)
   while not progress.completed:
     time.sleep(0.01)
   if newNet.name == None:
@@ -861,7 +869,7 @@ def netDelete(args):
       vboxnetDoesntExists = False
       break
   if vboxnetDoesntExists:
-    print("%s doesn't exist." % whi(vboxnetName))
+    print("{} doesn't exist.".format(whi(vboxnetName)))
     return 1
   progress = vbox.host.removeHostOnlyNetworkInterface(net.id)
   while not progress.completed:
@@ -889,19 +897,19 @@ def vmIp(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("%s doesn't exist" % whi(vmName))
+    print("{} doesn't exist".format(whi(vmName)))
     return 1
 
   if not uniqueIP(ip):
-    print("IP %s is already in used by another VM" % whi(ip))
+    print("IP {} is already in used by another VM".format(whi(ip)))
     return 1
 
   if vm.state == const.MachineState_Running:   
-    print("%s needs to be powered off for this" % whi(vmName))
+    print("{} needs to be powered off for this".format(whi(vmName)))
     return 1
 
   if setVmIp(vm, ip) != 0:
-    print("[%s] Unable to set IP to %s" % (whi(vmName), whi(ip)))
+    print("[{}] Unable to set IP to {}".format((whi(vmName), whi(ip))))
     return 1
   return 0
 
@@ -929,12 +937,12 @@ def vmMod(args):
     return 1
 
   if (vbox.host.processorOnlineCount - cpu) < 2:
-    print("Error: This host only has %s CPUs. Assigning %s will oversubscribe it" % \
-          (red(vbox.host.processorOnlineCount), red(cpu)))
+    print("Error: This host only has {} CPUs. Assigning {} will oversubscribe it" \
+          .format(red(vbox.host.processorOnlineCount), red(cpu)))
     return 1
   if (vbox.host.memoryAvailable - memory) < 1024:
-    print("Error: This host only has %sMB of RAM. Assigning %s will oversubscribe it" % \
-          (red(vbox.host.memoryAvailable), red(memory)))
+    print("Error: This host only has {}MB of RAM. Assigning {} will oversubscribe it" \
+          .format(red(vbox.host.memoryAvailable), red(memory)))
     return 1
 
   (vmMuta, session) = openSession(vm, const.LockType_Write)
@@ -971,15 +979,15 @@ def vmProvision(args):
   cfg = ConfigParser()
   cfg.read(vmconf)
   if len(cfg.sections()) < 1:
-    print("Error: %s file has no sections (no VMs) defined" % red(vmconf))
+    print("Error: {} file has no sections (no VMs) defined".format(red(vmconf)))
     return 1
 
   # Ensure each VM section has the required minimum number of variables
   for sect in cfg.sections():
     if 'image' in cfg.options(sect) and 'netip' in cfg.options(sect):
       continue
-    print("Error: Each section in %s needs at least these variables defined: %s and %s" % \
-           (red(vmconf), red('image'), red('netip')))
+    print("Error: Each section in {} needs at least these variables defined: {} and {}" \
+           .format(red(vmconf), red('image'), red('netip')))
     return 1
 
   # Provision each VM as per its parameters defined in its vmconf section
@@ -992,17 +1000,17 @@ def vmProvision(args):
 
     vmName = sect                            # 1 name (Mandatory). Same as the section name
 
-    print("[%s] Provisioning" % (whi(vmName)))
+    print("[{}] Provisioning".format(whi(vmName)))
 
     vmImg = cfg.get(sect, 'image')           # 2 image (Mandatory)
     vmImgPath = os.path.join(vmhome, vmImg)
     if not os.path.isfile(vmImgPath): 
-      print(whi(vmImg) + " doesn't exist. Please specify an available VM image for " + whi(key))
+      print("{} doesn't exist. Please specify an available VM image for {}".format(whi(vmImg, whi(key))))
       return 1
 
     vmNetIp = cfg.get(sect, 'netip')         # 3 netip (Mandatory)
     if not validIP(vmNetIp) or vmNetIp.endswith(".1"):
-      print("%s is an invalid IP address" % whi(vmNetIp))
+      print("{} is an invalid IP address".format(whi(vmNetIp)))
       return 1
 
     if 'cpus' in cfg.options(sect):          # 4 cpus
@@ -1030,10 +1038,10 @@ def vmProvision(args):
     # already configured as per vmconf then we want to leave it alone
     try:
       vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-      print("[%s] VM already exists" % whi(vmName))
+      print("[{}] VM already exists".format(whi(vmName)))
     except:
       if vmCreate([vmName, vmImg]) != 0:
-        print("Error creating VM %s" % (whi(vmName)))
+        print("Error creating VM {}".format(whi(vmName)))
         return 1
       vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
     
@@ -1047,41 +1055,41 @@ def vmProvision(args):
         if vmTmp.name == vm.name:
           continue   # Skip this machine itself
         if getVmIp(vmTmp) == vmNetIp:
-          print("[%s] Error: IP %s is already taken by %s" % (whi(vmName), red(ip), whi(vmTmp.name)))
+          print("[{}] Error: IP {} is already taken by {}".format(whi(vmName), red(ip), whi(vmTmp.name)))
           return 1
       sameConfig = False
-      print("[%s] Setting IP address to %s" % (whi(vmName), whi(vmNetIp)))
+      print("[{}] Setting IP address to {}".format((whi(vmName), whi(vmNetIp))))
 
     # CPUs
     if vm.CPUCount != int(vmCpus):
       sameConfig = False
-      print("[%s] Setting CPU count to %s" % (whi(vmName), whi(str(vmCpus))))
+      print("[{}] Setting CPU count to {}".format(whi(vmName), whi(str(vmCpus))))
 
     # Memory  
     if vm.memorySize != int(vmMemory):
       sameConfig = False
-      print("[%s] Setting memory amount to %s" % (whi(vmName), whi(str(vmMemory))))
+      print("[{}] Setting memory amount to {}".format(whi(vmName), whi(str(vmMemory))))
 
     # Perform update if any one parameter was different
     if sameConfig:
-      print("[%s] VM already configured as per %s" % (whi(vmName), whi(vmconf)))
+      print("[{}] VM already configured as per {}".format(whi(vmName), whi(vmconf)))
       if vm.state != const.MachineState_Running:   # Start machine if not already running
         ret = vmStart([vmName])
         if ret != 0:
-          print("[%s] Error starting VM" % (red(vmName)))
+          print("[{}] Error starting VM".format(red(vmName)))
     else:
-      print("[%s] Updating VM as per %s" % (whi(vmName), whi(vmconf)))
+      print("[{}] Updating VM as per {}".format(whi(vmName), whi(vmconf)))
       if vm.state == const.MachineState_Running:   # Stop machine if already running
         vmStop([vmName, "f"])
       vmMod([vmName, str(vmCpus), str(vmMemory)])  # Update cpu and memory (note the string conversion)
       setVmIp(vm, vmNetIp)                         # Update IP address
       ret = vmStart([vmName])                      # Start machine
       if ret != 0:
-        print("[%s] Error starting VM" % (red(vmName)))
+        print("[{}] Error starting VM".format(red(vmName)))
   
     # Run VMCOPY COMMAND
     if vmCopy:
-      print("[%s] VMCOPY: %s" % (whi(vmName), whi(vmCopy)))
+      print("[{}] VMCOPY: {}".format(whi(vmName), whi(vmCopy)))
       source = vmCopy.strip('"').split()[0]
       destination = vmCopy.strip('"').split()[1]
       timeOut = time.time() + 120
@@ -1091,7 +1099,7 @@ def vmProvision(args):
 
     # Run VMRUN COMMAND
     if vmRun:
-      print("[%s] VMRUN: %s" % (whi(vmName), whi(vmRun)))
+      print("[{}] VMRUN: {}".format(whi(vmName), whi(vmRun)))
       vmSSH([vmName, vmRun])
   return 0
 

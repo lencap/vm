@@ -1,22 +1,22 @@
 # VM
-A small utility to more easily manage [VirtualBox](https://www.virtualbox.org/) [CentOS](https://www.centos.org/) virtual machines from the __macOS__ command line. This `vm` utility is very similar to [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but way simpler. It's like having a dedicated Vagrant program for only managing Linux CentOS VMs on macOS.
+A small utility to more easily manage [VirtualBox](https://www.virtualbox.org/) [CentOS](https://www.centos.org/) virtual machines from the __macOS__ command line. This `vm` utility is very similar to [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but way simpler. It's like having a dedicated Vagrant program for __only__ managing Linux CentOS VMs on macOS.
 
 Also leaving around original Bash versions for posterity. And there is also a __C__ language version in its initial development state, to learn more about VirtualBox C Program bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
 
 TODO:
 * Say more about the `prov` command, which can provision one or many VMs in the Vagrant style.
 * Say more about the networking of these OVA and how the utility uses them. All VM have NIC1 set as NAT type for communicating out, and NIC2 as Host-Only to communicate with each other.
-* Explain that specially packaged OVAs are required. See `vm imgdawn` for how to create the.
+* Explain that specially packaged OVAs are required. See `vm imgdawn` for how to create them.
 
 ## Prerequisites
 Tested on macos v10.15.2 with VirtualBox v6.1.0
 
 ## Installation
-Easiest way is to: `brew install lencap/tools/vm` or you can clone the repo and do: `make install`
+Either `brew install lencap/tools/vm` or `make install`
 
 ## Usage
 ```
-Simple CentOS VM Manager v2.4.1
+Simple CentOS VM Manager v2.4.3
 vm list                               List all VMs
 vm create    <vmName> <imgName>       Create VM using imgName
 vm del       <vmName> [f]             Delete VM. Force option
