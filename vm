@@ -26,7 +26,7 @@ except ImportError:
   Die(1, "Missing {} module. Is VirtualBox installed?".format(whi('vboxapi')))
 
 # Global variables
-prgVer    = 'v2.5.0'
+prgVer    = 'v2.5.1'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -45,7 +45,7 @@ def Usage():
         "{} start     <vmName> [g]             Start VM. GUI option\n"
         "{} stop      <vmName> [f]             Stop VM. Force option\n"
         "{} ssh       <vmName> [<command>]     SSH into or optionally run command on VM\n"
-        "{} prov      [init]                   Provision VM(s) in vmconf file; init creates skeleton\n"
+        "{} prov      [init]                   Provision VM(s) in vm.conf file; init creates skeleton\n"
         "{} info      <vmName>                 Dump VM details\n"
         "{} mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults to 1024\n"
         "{} ip        <vmName> <ip>            Set VM IP address\n"
