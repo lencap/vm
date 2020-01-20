@@ -16,7 +16,7 @@ Either `brew install lencap/tools/vm` or `make install`
 
 ## Usage
 ```
-Simple CentOS VM Manager v2.4.4
+Simple CentOS VM Manager v2.5.0
 vm list                               List all VMs
 vm create    <vmName> <imgName>       Create VM using imgName
 vm del       <vmName> [f]             Delete VM. Force option
@@ -29,7 +29,7 @@ vm mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults
 vm ip        <vmName> <ip>            Set VM IP address
 vm imglist                            List all available images
 vm imgcreate <imgName> <vmName>       Create imgName from existing VM
-vm imgdawn                            How-to create brand new OVA image with Hashicorp packer
+vm imgpack                            How-to create brand new OVA image with Hashicorp packer
 vm imgimp    <imgFile>                Import image. Make available to this program
 vm imgdel    <imgName> [f]            Delete image. Force option
 vm netlist                            List available networks
