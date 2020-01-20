@@ -4,9 +4,9 @@ A small utility to more easily manage [VirtualBox](https://www.virtualbox.org/) 
 Also leaving around original Bash versions for posterity. And there is also a __C__ language version in its initial development stages, to learn more about VirtualBox C Program bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
 
 TODO:
-* Say more about the `prov` command, which can provision one or many VMs in the Vagrant style.
-* Say more about the networking of these OVA and how the utility uses them. All VM have NIC1 set as NAT type for communicating out, and NIC2 as Host-Only to communicate with each other.
-* Explain that specially packaged OVAs are required. See `vm imgdawn` for how to create them.
+* Say more about the `prov` command, which can provision one or multiple VMs in a style similar to Vagrant.
+* Say more about the networking of these VMs. Like other similiar utilities, NIC1 set as NAT type for communicating out, and NIC2 as Host-Only to communicate with each other.
+* Explain that specially packaged OVAs are required. See `vm imgpack` for how to create them.
 
 ## Prerequisites
 Tested on macos v10.15.2 with VirtualBox v6.1.0
