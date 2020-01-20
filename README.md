@@ -1,7 +1,7 @@
 # VM
 A small utility to more easily manage [VirtualBox](https://www.virtualbox.org/) [CentOS](https://www.centos.org/) virtual machines from the __macOS__ command line. This `vm` utility is very similar to [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but way simpler. It's like having a dedicated Vagrant program for __only__ managing Linux CentOS VMs on macOS.
 
-Also leaving around original Bash versions for posterity. And there is also a __C__ language version in its initial development state, to learn more about VirtualBox C Program bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
+Also leaving around original Bash versions for posterity. And there is also a __C__ language version in its initial development stages, to learn more about VirtualBox C Program bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
 
 TODO:
 * Say more about the `prov` command, which can provision one or many VMs in the Vagrant style.
