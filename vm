@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vm
-# A simple virtual machine manager
+# Simple CentOS VM manager
 
 import os, sys, time, shutil, string   # The usual suspects
 import socket
