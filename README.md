@@ -3,6 +3,8 @@ A small utility to more easily manage [VirtualBox](https://www.virtualbox.org/) 
 
 Also leaving around original Bash versions for posterity. And there is also a __C__ language version in its initial development stages, to learn more about VirtualBox C Program bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
 
+ok
+
 ## Todo
 - Allow easy switching of user and ssh key?
 - Finish C version?
