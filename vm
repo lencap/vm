@@ -1,32 +1,25 @@
 #!/usr/bin/env python
 # vm
-# Simple CentOS VM manager
+# Simple Linux VM manager
 
-import os, sys, time, shutil, string   # The usual suspects
+import os
+import sys 
+import time 
+import shutil
 import socket
 import subprocess
 import tarfile
 import traceback
 from configparser import ConfigParser
-
-# Special mini-functions, defined as early as possible
-def whi(s):
-  return "\033[0;37m{}\033[0m".format(str(s))  # Colorize white
-def red(s):
-  return "\033[0;31m{}\033[0m".format(str(s))  # Colorize red
-def yel(s):
-  return "\033[0;33m{}\033[0m".format(str(s))  # Colorize yellow
-def Die(code, msg):
-  if msg != "": print(msg) ; sys.exit(code)
-
-# Ensure vboxapi module is installed
 try:
   from vboxapi import VirtualBoxManager
 except ImportError:
-  Die(1, "Missing {} module. Is VirtualBox installed?".format(whi('vboxapi')))
+  print("Missing 'vboxapi' module. Is VirtualBox installed?")
+  sys.exit(1)
+
 
 # Global variables
-prgVer    = 'v2.5.1'
+prgVer    = 'v2.6.0'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -37,7 +30,7 @@ vmuser    = 'vmuser'                       # Default user
 
 
 def Usage():
-  p = whi(prgName)
+  p = prgName
   print("Simple CentOS VM Manager {}\n"
         "{} list                               List all VMs\n"
         "{} create    <vmName> <imgName>       Create VM using imgName\n"
@@ -45,7 +38,7 @@ def Usage():
         "{} start     <vmName> [g]             Start VM. GUI option\n"
         "{} stop      <vmName> [f]             Stop VM. Force option\n"
         "{} ssh       <vmName> [<command>]     SSH into or optionally run command on VM\n"
-        "{} prov      [init]                   Provision VM(s) in vm.conf file; init creates skeleton\n"
+        "{} prov      [<vmConf>|c]             Provision VM(s) in vm.conf, or optional given file; Create skeleton file option\n"
         "{} info      <vmName>                 Dump VM details\n"
         "{} mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults to 1024\n"
         "{} ip        <vmName> <ip>            Set VM IP address\n"
@@ -57,13 +50,68 @@ def Usage():
         "{} netlist                            List available networks\n"
         "{} netadd    <ip>                     Create new network\n"
         "{} netdel    <vboxnetX>               Delete given network"
-        .format(whi(prgVer), p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
-  Die(1, "")
+        .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+  sys.exit(0)
 
 
-def dumpObj(obj):
-  for attr in dir(obj):
-    print("obj.{} = {}".format(attr, getattr(obj, attr)))
+def CreateVMConf():
+  with open(vmconf, "w") as f:
+    f.write("# vm.conf\n"
+            "# Running 'vm prov' in a directory with this file in it will automatically\n"
+            "# provision the VMs defined here. Each VM requires its own section name,\n"
+            "# which becomes the VM name. Then there are 6 other possible keys you can\n"
+            "# define. Two of which are mandatory (image and netip). The other 4 (cpus,\n"
+            "# memory, vmcopy, and vmrun) are optional. Lines starting with a hash(#)\n"
+            "# are treated as comments. Spaces can only be used within double quotes (\").\n"
+            "# vmcopy and vmrun are perfect for copying/running bootstrapping scripts.\n"
+            "# Note these last 2 can only appear once a piece, as duplicate keys are not\n"
+            "# yet allowed. It is best to put everything inside just one bootstrapping\n"
+            "# script. You can also name this file anything you want and provision with\n"
+            "# 'vm prov MYFILE'.\n\n"
+            "#[dev1]\n"
+            "#image   = centos7.7.1908-vm.ova\n"
+            "#netip   = 10.11.12.2\n"
+            "#cpus    = 1\n"
+            "#memory  = 1024\n"
+            "#vmcopy  = \"./bootstrap.sh /tmp/bootstrap.sh\"\n"
+            "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
+            "#[dev2]\n"
+            "#image   = centos7.7.1908-vm.ova\n"
+            "#netip   = 10.11.12.3\n")
+  os.chmod(vmconf, 0o644)
+
+
+def CreateSSHKeys():
+  with open(vmsshpri, "w") as f:
+    f.write("-----BEGIN RSA PRIVATE KEY-----\n"
+            "MIIEoQIBAAKCAQEAyIZo/WEpMT8006pKzqHKhNEAPITJCEWjLN+cGSg9snFXVljA\n"
+            "IQ9CtLo89PJvnfGj8I9VxXPxCUmC8gew/XXxQuExa0XhSSNYDEqMyOvlB8KSoYw8\n"
+            "tFwNAYaeHw4rbygIgOSn5+g1lLXEf+FPa5JJJAByoxvqXtxZhwiJP2BOkp/ULqsy\n"
+            "1UGbHFzGsYHkD8ukYINnr8Yob5K3GuvBSZkb4o02ErC0Tj9Xi52vxgSQEKNQs5BO\n"
+            "xzb4gtJ7ozArd11xrpmel02bH7mRfrB/Gpsfvb4WXRG9Kiat09T3XjceMAlcmMUG\n"
+            "QJD0ip1mgN3elTCGpon8K5ZRWGxrF7G8XqnGQQIBIwKCAQBKexENp77XxwT+KU78\n"
+            "SrjvgNQzvEqrTRC45Vc8i0odtRHPnU6tMY3OGUnXUru+UnAXhbIkxKn8Ip5Z5ZmC\n"
+            "tsdTWvUZNzZrn2nYrfnG+IhEtfvy3FEPyms7FL5jTmfndUT8rLNkw/ak8w54pCTQ\n"
+            "LwU5Qf6xnKeCUdgcNl7dBoOViyj8eourzUCY55JMZFDF7exKA6j2FXdUsl6O8zlZ\n"
+            "immjlbO6dSkZt203jyuFlV1YNG/13EjeihmvMDugnP2CP1qr9kUpGn1NfwdCVb2/\n"
+            "AJz+g8gvZflOIzYaEiaodEMJsGNA2sXuygOVSZy4ryc3iFezA4Bvk/3bLweNqlvj\n"
+            "yVSLAoGBAP7tjUErm9ciDzLnXe6+toV2E1e1D/a/z2t/GxbbxPYklAUeWaPLhcsZ\n"
+            "9B7aUx7BGeB+lPI5sP//hc8ouFTTgE3Y9nsgOjEY7HFIDSG1xrN+MnuY+ztNeDif\n"
+            "Jfs44vMdP32pAwJqgtKtg1KiILqx81XeMYhBynpwooISJTioW5FRAoGBAMleSirb\n"
+            "GrOZtrsj2s0Uz6LAtPpQfGaQp/5CVYYt/QlUUnR0fhgCaT8DduCrbhOJcmoo5V1K\n"
+            "EimEQPhAM6JFMpIuDBp+kQT7FKo1Rl6J+igId5N/jc72nm1kpYBfzGLlAqxU13jJ\n"
+            "ULXBU+QU5ZLrRESrTwZun9ytXvwR/O7HMCnxAoGBAPek755k4IfX8YHoEhsfqf39\n"
+            "rGPUdehijvq1/Q7kHmtz/YFQrtmhIuKOPZpQbgCeU6bhXX2XIPivFEWVRVm3g/Pa\n"
+            "FAKUVclLaVgaG2KTU09HZD2NS9M1UDcBAFMhUX50LwxbCjzcfxXNIHwod5DKH5U+\n"
+            "Pr7g01JeycAu4lRLxqprAoGASstAHovlWKbO18t9J5oD+p9ZKcYfk89UVx/z4WGJ\n"
+            "3uTOK0E2JizIAXZQudlGJIOCRLAarZ8rUT/AXDUafhmzsqNjlM/suLUHrO83ZPFr\n"
+            "izZYTLpZPj5YGgDPwfeyUJ40MWFXWL/NhVZvndvgPeJbL3LUNZbNqby84UiChJMg\n"
+            "hJsCgYA5KiUh42OZgHjez5SGvDBoBaOPwutk5O5ufESfgpzh3W0r6iA/dy+HesYV\n"
+            "7YDhwSXl7zQgWHKb76SE1/fQcBYOd4TcKzbq4IDU1+oibcOXRMOGkg6vdsXhAvdU\n"
+            "ADiALhM7Gqxc0eIMPSw4REhLiS2XNlTSL8fxPHMVJSIuPn+SXw==\n"
+            "-----END RSA PRIVATE KEY-----\n")
+  os.chmod(vmsshpri, 0o600)
+  subprocess.call("ssh-keygen -f {} -y > {}".format(vmsshpri,vmsshpub), shell=True)
 
 
 def enumElem(enumerate, element):
@@ -131,7 +179,7 @@ def setIP(vm, ip):
   #   enp0s8 w/ HostOnly networking  =  for intra-network connectivity
 
   if invalidIP(ip):
-    print("{} is an invalid IP address".format(whi(ip)))
+    print("IP address '{}' is invalid".format(ip))
     return 1
   if ip.split('.')[3] == '1':
     print("IP ending in .1 is reserved for the vboxnet gateway itself")
@@ -140,7 +188,7 @@ def setIP(vm, ip):
     if vmTmp.name == vm.name:
       continue   # Skip this machine itself
     if getIP(vmTmp) == ip:
-      print("Error: IP {} is taken by {}".format((whi(ip), whi(vmTmp.name))))
+      print("Error: IP '{}' is already taken by VM '{}'".format(ip, vmTmp.name))
       return 1
   ipNet = '.'.join(ip.split('.')[:3])  # Derive IP's network address (the first 3 octects)
   # If given IP address fits into an existing vboxnet network, then
@@ -207,14 +255,14 @@ def vmCreate(args):
 
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-    print("VM {} already exist".format(whi(vmName)))
+    print("VM '{}' already exist".format(vmName))
     return 1
   except:
     pass   # ... let' continue creating VM
 
   imgFile = os.path.join(vmhome, imgName)
   if not os.path.isfile(imgFile):
-    print("Image named {} doesn't exist.".format(whi(imgName)))
+    print("Image named '{}' doesn't exist.".format(imgName))
     return 1
 
   # Inspect OVA before importing into this new VM we're creating from it
@@ -226,7 +274,7 @@ def vmCreate(args):
     print("OVA interpretation warnings: {}".format(warnings))
   sysDesc = appliance.getVirtualSystemDescriptions()  # Get IVirtualSystemDescription object
   if len(sysDesc) != 1:
-    print(red("Error: There are 0 or more than 1 VM described in this OVA. Unsupported."))
+    print("Fatal: There are 0 or more than 1 VM described in this OVA. Unsupported.")
     return 1
 
   # getDescription returns a list data structure of 5 other lists, which we'll call descList
@@ -297,7 +345,7 @@ def vmCreate(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print(red("Error creating VM"))
+    print("Error creating VM")
     return 1
 
   # Get a write lock session on the VM and ensure disk1 is the only bootable device, and
@@ -338,20 +386,20 @@ def vmStart(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("VM {} doesn't exist".format(whi(vmName)))
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
 
   if vm.state == const.MachineState_Running:   
-    print("VM {} is already running".format(whi(vmName)))
+    print("VM '{}' is already running".format(vmName))
     return 1
 
   # Don't start VM unless IP is defined and is valid
   ipAddr = getIP(vm)             # Get officially defined IP
   if ipAddr == '<undefined>':
-    print("Error. IP address is {}".format(whi('<undefined>')))
+    print("IP address is '<undefined>'")
     return 1
   if invalidIP(ipAddr):
-    print("Error. IP address {} is invalid.".format(whi(ipAddr)))
+    print("IP address '{}' is invalid.".format(ipAddr))
     return 1
   ret = setIP(vm, ipAddr)    # Store IP in official location and setup net devices
   if ret != 0:               # Don't start if we couldn't set IP address
@@ -372,7 +420,7 @@ def vmStart(args):
   while timeOut > time.time() and vm.state != const.MachineState_Running:   
     time.sleep(0.1)
   if vm.state != const.MachineState_Running:   
-    print(red("Error starting VM."))
+    print("Error starting VM")
     return 1
   return 0
 
@@ -391,19 +439,19 @@ def vmStop(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("VM {} doesn't exist".format(whi(vmName)))
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
 
   if vm.state == const.MachineState_Aborted:
-    print("{} state is synonymous with {} state".format(whi("Aborted"),whi("PoweredOff")))
+    print("'Aborted' state is synonymous with 'PoweredOff' state")
     return 1
 
   if vm.state != const.MachineState_Running:   
-    print("{} is not running".format(whi(vmName)))
+    print("VM '{}' is not running".format(vmName))
     return 1
 
   if option == "normal": 
-    msg = "Stop {}? y/n ".format(whi(vmName))
+    msg = "Stop VM '{}'? y/n ".format(vmName)
     response = raw_input(msg)
     if response != "y":
       return 1
@@ -481,10 +529,10 @@ def vmSSH(args, verbose=True):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("{} doesn't exist".format(whi(vmName)))
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
   if vm.state != const.MachineState_Running:   
-    print("{} is not running".format(whi(vmName)))
+    print("VM '{}' is not running".format(vmName))
     return 1
 
   ssh = "ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
@@ -492,7 +540,7 @@ def vmSSH(args, verbose=True):
 
   ip = getIP(vm)
   if noSSH(ip):
-    print("VM unreachable via {}:{}".format( whi(ip), whi('22') ) )
+    print("VM SSH unreachable over {}:22".format(ip))
     return 1
 
   # Run remote SSH command or do interactive logon. Note, vmuser is global
@@ -512,10 +560,10 @@ def vmSSHCopy(source, vmName, destination, verbose=True):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("{} doesn't exist".format(whi(vmName)))
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
   if vm.state != const.MachineState_Running:   
-    print("{} is not running".format(whi(vmName)))
+    print("VM '{}' is not running".format(vmName))
     return 1
 
   scp = "scp -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
@@ -523,7 +571,7 @@ def vmSSHCopy(source, vmName, destination, verbose=True):
 
   ip = getIP(vm)
   if noSSH(ip):
-    print("VM unreachable via {}:{}".format(whi(ip), whi('22')))
+    print("VM SSH unreachable over {}:22".format(ip))
     return 1
 
   # Copy source file to vm:destination
@@ -551,11 +599,11 @@ def vmDelete(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("{} doesn't exist".format(whi(vmName)))
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
 
   if option == "normal": 
-    msg = "Destroy {}? y/n ".format(whi(vmName))
+    msg = "Destroy VM '{}'? y/n ".format(vmName)
     response = raw_input(msg)
     if response != "y":
       return 1
@@ -587,7 +635,7 @@ def vmInfo(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("VM {} doesn't exist".format(whi(vmName)))
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
 
   # The most important attributes
@@ -741,7 +789,7 @@ def netAdd(args):
     return 1
   ip = args[0]
   if invalidIP(ip):
-    print("{} is an invalid IP address".format(whi(ip)))
+    print("IP address '{}' is invalid".format(ip))
     return 1
   if ip.split('.')[3] != "1":
     print("Gateway IP address must end in .1")
@@ -769,7 +817,7 @@ def netDelete(args):
       vboxnetDoesntExists = False
       break
   if vboxnetDoesntExists:
-    print("{} doesn't exist.".format(whi(vboxnetName)))
+    print("Network '{}' doesn't exist.".format(vboxnetName))
     return 1
   progress = vbox.host.removeHostOnlyNetworkInterface(net.id)
   while not progress.completed:
@@ -788,19 +836,19 @@ def vmIp(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print("{} doesn't exist".format(whi(vmName)))
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
 
   if usedIP(ip):
-    print("IP {} is already in used by another VM".format(whi(ip)))
+    print("IP '{}' is already in used by another VM".format(ip))
     return 1
 
   if vm.state == const.MachineState_Running:   
-    print("{} needs to be powered off for this".format(whi(vmName)))
+    print("MV '{}' needs to be powered off for this".format(vmName))
     return 1
 
   if setIP(vm, ip) != 0:
-    print("[{}] Unable to set IP to {}".format((whi(vmName), whi(ip))))
+    print("Unable to set VM '{}' IP to '{}'".format(vmName, ip))
     return 1
   return 0
 
@@ -821,19 +869,19 @@ def vmMod(args):
   try:
     vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
   except:
-    print(whi(vmName) + " doesn't exist")
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
   if vm.state == const.MachineState_Running:   
-    print(whi(vmName) + " needs to be powered off for this")
+    print("VM '{}' needs to be powered off for this".format(vmName))
     return 1
 
   if (vbox.host.processorOnlineCount - cpu) < 2:
-    print("Error: This host only has {} CPUs. Assigning {} will oversubscribe it" \
-          .format(red(vbox.host.processorOnlineCount), red(cpu)))
+    print("Error: This host only has {} CPUs. Assigning {} will oversubscribe it"
+          .format(vbox.host.processorOnlineCount, cpu))
     return 1
   if (vbox.host.memoryAvailable - memory) < 1024:
-    print("Error: This host only has {}MB of RAM. Assigning {} will oversubscribe it" \
-          .format(red(vbox.host.memoryAvailable), red(memory)))
+    print("Error: This host only has {}MB of RAM. Assigning '{}' will oversubscribe it"
+          .format(vbox.host.memoryAvailable, memory))
     return 1
 
   (vmMuta, session) = openSession(vm, const.LockType_Write)
@@ -847,37 +895,41 @@ def vmMod(args):
 
 
 def vmProvision(args):
-  if len(args) == 1 and args[0].lower() == "init":    # Create a template file if it was requested
+  global vmconf
+  if len(args) == 1 and args[0].lower() == "c":   # Create a template file if it was requested
     if os.path.isfile(vmconf):
-      msg = "File {} exists already. Overwrite it? y/n ".format(whi(vmconf))
+      msg = "File '{}' exists. Overwrite it? y/n ".format(vmconf)
       response = raw_input(msg)
       if response != "y":
         return 1
-    genFile("#01=>", vmconf, 0o644)
+    CreateVMConf()
     return 0
-  if not os.path.isfile(vmconf):                      # If vmconf file doesn't exist in CWD
-    print("Usage: vm prov [init]")
+
+  if len(args) == 1 and os.path.isfile(args[0]):  # Provision with optional given conf file
+    vmconf = args[0]
+  elif not os.path.isfile(vmconf):                # Abort if vm.conf does not exist at all
+    print("Usage: vm prov [<vmConf>|c]")
     return 0  
 
   # Prohibit running this command from HOME directory
   if os.getcwd() == os.environ['HOME']:
-    print("Error: Running this command from your HOME dir is prohibited for security reasons.\n" \
-          "Please cd into a special project directory.")
+    print("Running this utility from your HOME dir is prohibited for security reasons.\n"
+          "Please work from a separate working directory.")
     return 1
 
   # Parse vmconf for inconsistencies
   cfg = ConfigParser()
   cfg.read(vmconf)
   if len(cfg.sections()) < 1:
-    print("Error: {} file has no sections (no VMs) defined".format(red(vmconf)))
+    print("{}: No VM sections defined".format(vmconf))
     return 1
 
   # Ensure each VM section has the required minimum number of variables
   for sect in cfg.sections():
     if 'image' in cfg.options(sect) and 'netip' in cfg.options(sect):
       continue
-    print("Error: Each section in {} needs at least these variables defined: {} and {}" \
-           .format(red(vmconf), red('image'), red('netip')))
+    print("{}: Each section needs at least these 2 variables defined: 'image' and 'netip'"
+          .format(vmconf))
     return 1
 
   # Provision each VM as per its parameters defined in its vmconf section
@@ -890,17 +942,17 @@ def vmProvision(args):
 
     vmName = sect                            # 1 name (Mandatory). Same as the section name
 
-    print("[{}] Provisioning".format(whi(vmName)))
+    print("{}: VM {}: Provisioning".format(vmconf, vmName))
 
     vmImg = cfg.get(sect, 'image')           # 2 image (Mandatory)
     vmImgPath = os.path.join(vmhome, vmImg)
     if not os.path.isfile(vmImgPath): 
-      print("{} doesn't exist. Please specify an available VM image for {}".format(whi(vmImg, whi(key))))
+      print("{}: VM {}: Image '{}' doesn't exist. Please specify an available image".format(vmconf, vmName, vmImg))
       return 1
 
     vmNetIp = cfg.get(sect, 'netip')         # 3 netip (Mandatory)
     if invalidIP(vmNetIp) or vmNetIp.endswith(".1"):
-      print("IP address {} is invalid".format(whi(vmNetIp)))
+      print("{}: VM {}: IP address '{}' is invalid".format(vmconf, vmName, vmNetIp))
       return 1
 
     if 'cpus' in cfg.options(sect):          # 4 cpus
@@ -928,10 +980,10 @@ def vmProvision(args):
     # already configured as per vmconf then we want to leave it alone
     try:
       vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-      print("[{}] VM already exists".format(whi(vmName)))
+      print("{}: VM {}: This VM already exists".format(vmconf, vmName))
     except:
       if vmCreate([vmName, vmImg]) != 0:
-        print("Error creating VM {}".format(whi(vmName)))
+        print("{}: VM {}: Error creating VM".format(vmconf, vmName))
         return 1
       vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
     
@@ -945,41 +997,41 @@ def vmProvision(args):
         if vmTmp.name == vm.name:
           continue   # Skip this machine itself
         if getIP(vmTmp) == vmNetIp:
-          print("[{}] Error: IP {} is already taken by {}".format(whi(vmName), red(ip), whi(vmTmp.name)))
+          print("{}: VM {}: IP '{}' is already taken by VM '{}'".format(vmconf, vmName, vmNetIp, vmTmp.name))
           return 1
       sameConfig = False
-      print("[{}] Setting IP address to {}".format((whi(vmName), whi(vmNetIp))))
+      print("{}: VM {}: Setting IP address to '{}'".format(vmconf, vmName, vmNetIp))
 
     # CPUs
     if vm.CPUCount != int(vmCpus):
       sameConfig = False
-      print("[{}] Setting CPU count to {}".format(whi(vmName), whi(str(vmCpus))))
+      print("{}: VM {}: Setting CPU count to '{}'".format(vmconf, vmName, str(vmCpus)))
 
     # Memory  
     if vm.memorySize != int(vmMemory):
       sameConfig = False
-      print("[{}] Setting memory amount to {}".format(whi(vmName), whi(str(vmMemory))))
+      print("{}: VM {}: Setting memory to '{}'".format(vmconf, vmName, str(vmMemory)))
 
     # Perform update if any one parameter was different
     if sameConfig:
-      print("[{}] VM already configured as per {}".format(whi(vmName), whi(vmconf)))
+      print("{}: VM {}: VM is already configured as per config file".format(vmconf, vmName))
       if vm.state != const.MachineState_Running:   # Start machine if not already running
         ret = vmStart([vmName])
         if ret != 0:
-          print("[{}] Error starting VM".format(red(vmName)))
+          print("{}: VM {}: Error starting VM".format(vmconf, vmName))
     else:
-      print("[{}] Updating VM as per {}".format(whi(vmName), whi(vmconf)))
+      print("{}: VM {}: Updating as per config file".format(vmconf, vmName))
       if vm.state == const.MachineState_Running:   # Stop machine if already running
         vmStop([vmName, "f"])
       vmMod([vmName, str(vmCpus), str(vmMemory)])  # Update cpu and memory (note the string conversion)
       setIP(vm, vmNetIp)                           # Update IP address
       ret = vmStart([vmName])                      # Start machine
       if ret != 0:
-        print("[{}] Error starting VM".format(red(vmName)))
-  
+        print("{}: VM {}: Error starting VM".format(vmconf, vmName))
+
     # Run VMCOPY COMMAND
     if vmCopy:
-      print("[{}] VMCOPY: {}".format(whi(vmName), whi(vmCopy)))
+      print("{}: VMCOPY: '{}'".format(vmName, vmCopy))
       source = vmCopy.strip('"').split()[0]
       destination = vmCopy.strip('"').split()[1]
       timeOut = time.time() + 120
@@ -989,7 +1041,7 @@ def vmProvision(args):
 
     # Run VMRUN COMMAND
     if vmRun:
-      print("[{}] VMRUN: {}".format(whi(vmName), whi(vmRun)))
+      print("{}: VMRUN: '{}'".format(vmName, vmRun))
       vmSSH([vmName, vmRun])
   return 0
 
@@ -1026,7 +1078,7 @@ def imgDelete(args):
     print("Error: No such OVA file.")
     return 1
   if option == "normal": 
-    msg = "Delete {}? y/n ".format(whi(imgName))
+    msg = "Delete image '{}'? y/n ".format(imgName)
     response = raw_input(msg)
     if response != "y":
       return 1
@@ -1036,18 +1088,19 @@ def imgDelete(args):
 
 def imgImport(args):
   if len(args) < 1 or len(args) > 1:
-    Die(1, "Usage: vm imgimp <imgFile>")
+    print("Usage: vm imgimp <imgFile>")
+    sys.exit(1)
   imgFile = args[0]
   if not os.path.isfile(imgFile): 
-    print("File {} does not exist.".format(whi(imgFile)))
+    print("File '{}' does not exist".format(imgFile))
     return 1
   # Reject if no .ova extension, or if not a tar file (what OVAs really are)
   if not imgFile.lower().endswith("ova") or not tarfile.is_tarfile(imgFile):
-    print("File {} lacks '.ova' extension or it's not an OVA file.".format(whi(imgFile)))
+    print("File '{}' lacks '.ova' extension, or it's not an OVA file.".format(imgFile))
     return 1
   targetFile = os.path.join(vmhome, os.path.basename(imgFile))
   if os.path.isfile(targetFile): 
-    print("Image {} already exists.".format(whi(targetFile)))
+    print("Image '{}' already exists".format(targetFile))
     return 1
 
   # Reject image tar package if it doesn't have the right files
@@ -1068,7 +1121,8 @@ def imgImport(args):
 
 def imgCreate(args):
   if len(args) < 2 or len(args) > 2:
-    Die(1, "{} imgcreate <imgName> <vmName>".format(prgName))
+    print("{} imgcreate <imgName> <vmName>".format(prgName))
+    sys.exit(1)
   (imgName, vmName) = args
   if not imgName.lower().endswith('.ova'):
     print("Image name must have an '.ova' extension.")
@@ -1108,50 +1162,38 @@ def imgCreate(args):
 
 
 def imgPack():
-  p = whi(prgName)
   print(
     "To create a brand new OVA image from an ISO, first make sure you install\n"
-    "{} and {}, then do the following:\n\n"
+    "'git' and 'packer', then do the following:\n\n"
     "1. git clone https://github.com/lencap/osimages\n"
     "2. cd osimages/centos\n"
     "3. packer validate centos7.7.1908-vm-ova.json\n"
     "4. packer build centos7.7.1908-vm-ova.json\n"
     "5. {} imgimp output-virtualbox-iso/centos7.7.1908-vm.ova\n"
     "6. {} imglist To confirm image is then available\n\n"
-    "You should be able to use any of the {} packer templates, and of course\n"
+    "You should be able to use any of the '*-vm*' packer templates, and of course\n"
     "you can create your very own. Please review existing templates, and the\n"
     "actual {} code to ensure your own images satisfy the essential requirements."
-    .format(whi('git'), whi('packer'), p, p, whi('*-vm*'), p)
+    .format(prgName, prgName, prgName)
   )
   return 0
 
 
-def genFile(code, filename, mode):
-  # Generate file from embedded DATA within this program file itself
-  prog_name = os.path.abspath(__file__)
-  if prog_name[-1] == 'c':
-     prog_name = prog_name[:-1]
-  os.system("grep '^" + code + "' " + prog_name + " | sed 's;" + code + ";;g' > " + filename)
-  os.chmod(filename, mode)
-  return 0
-
-
 def main(args=None):
-  if not os.path.isdir(vmhome):   # Ensure config directory exists
+  if not os.path.isdir(vmhome):  # Ensure config directory exists
     os.makedirs(vmhome)
 
-  # Generate essential files on every run to always keep them fresh
-  genFile("#02=>", vmsshpri, 0o600)
-  subprocess.call("ssh-keygen -f {} -y > {}".format(vmsshpri,vmsshpub), shell=True)
-
+  CreateSSHKeys()   # Generate SSH keys on every run to ensure they're always readily available
+  
   # Initialized VirtualBox. Note global variables
-  global vboxmgr, const, vbox, vbhome
-  vboxmgr = VirtualBoxManager(None, None)   # Init mgr with default style/parameters
-  const   = vboxmgr.constants               # Constants handle
-  vbox    = vboxmgr.getVirtualBox()         # IVirtualBox handle
+  global vboxmgr, const, vbox, vbhome           # Declare global variables
+  vboxmgr = VirtualBoxManager(None, None)       # Init mgr with default style/parameters
+  const   = vboxmgr.constants                   # Constants handle
+  vbox    = vboxmgr.getVirtualBox()             # IVirtualBox handle
   vbhome  = vbox.systemProperties.defaultMachineFolder
   if int(vbox.APIVersion[0]) < 5:
-    Die(1, red("Requires VirtualBox v5.0 or greater."))
+    print("Fatal. Requires VirtualBox v5.0 or greater.")
+    sys.exit(1)
 
   # Parse arguments
   # Python has no switch/case construct, so below 'action' switcher works around that.  
@@ -1184,7 +1226,8 @@ def main(args=None):
     cmd = sys.argv[1]
 
   if cmd not in action:
-    Die(1, "Command " + whi(cmd) + " is not available.")
+    print("Command '{}' is not available.".format(cmd))
+    sys.exit(1)
 
   # Run given command 
   try:
@@ -1198,63 +1241,8 @@ def main(args=None):
 
   # Clean up and exit    
   del vboxmgr
-  Die(0, "")
+  sys.exit(0)
 
 
 if __name__ == '__main__':
   main()
-
-
-# DATA
-#01=># vm.conf
-#01=># Running 'vm prov' in a directory with this file in it will automatically
-#01=># provision the VMs defined here. Each VM requires its own section name,
-#01=># which becomes the VM name. Then there are 6 other possible keys you can
-#01=># define. Two of which are mandatory (image and netip). The other 4 (cpus,
-#01=># memory, vmcopy, and vmrun) are optional. Lines starting with a hash(#)
-#01=># are treated as comments. Spaces can only be used within double quotes (").
-#01=># vmcopy and vmrun are perfect for copying/running bootstrapping scripts.
-#01=># Note that duplicate keys aren't allowed, for now, so it's best to put
-#01=># everything inside the bootstrapping script.
-#01=>
-#01=>#[dev1]
-#01=>#image   = centos7.7.1908-vm.ova
-#01=>#netip   = 10.11.12.2
-#01=>#cpus    = 1
-#01=>#memory  = 1024
-#01=>#vmcopy  = "./bootstrap.sh /tmp/bootstrap.sh"
-#01=>#vmrun   = "/tmp/bootstrap.sh"
-#01=>
-#01=>#[dev2]
-#01=>#image   = centos7.7.1908-vm.ova
-#01=>#netip   = 10.11.12.3
-
-# SSH private key for managing VBox VMs
-# WARNING: Hardcoded private keys like this is very poor security!
-#02=>-----BEGIN RSA PRIVATE KEY-----
-#02=>MIIEoQIBAAKCAQEAyIZo/WEpMT8006pKzqHKhNEAPITJCEWjLN+cGSg9snFXVljA
-#02=>IQ9CtLo89PJvnfGj8I9VxXPxCUmC8gew/XXxQuExa0XhSSNYDEqMyOvlB8KSoYw8
-#02=>tFwNAYaeHw4rbygIgOSn5+g1lLXEf+FPa5JJJAByoxvqXtxZhwiJP2BOkp/ULqsy
-#02=>1UGbHFzGsYHkD8ukYINnr8Yob5K3GuvBSZkb4o02ErC0Tj9Xi52vxgSQEKNQs5BO
-#02=>xzb4gtJ7ozArd11xrpmel02bH7mRfrB/Gpsfvb4WXRG9Kiat09T3XjceMAlcmMUG
-#02=>QJD0ip1mgN3elTCGpon8K5ZRWGxrF7G8XqnGQQIBIwKCAQBKexENp77XxwT+KU78
-#02=>SrjvgNQzvEqrTRC45Vc8i0odtRHPnU6tMY3OGUnXUru+UnAXhbIkxKn8Ip5Z5ZmC
-#02=>tsdTWvUZNzZrn2nYrfnG+IhEtfvy3FEPyms7FL5jTmfndUT8rLNkw/ak8w54pCTQ
-#02=>LwU5Qf6xnKeCUdgcNl7dBoOViyj8eourzUCY55JMZFDF7exKA6j2FXdUsl6O8zlZ
-#02=>immjlbO6dSkZt203jyuFlV1YNG/13EjeihmvMDugnP2CP1qr9kUpGn1NfwdCVb2/
-#02=>AJz+g8gvZflOIzYaEiaodEMJsGNA2sXuygOVSZy4ryc3iFezA4Bvk/3bLweNqlvj
-#02=>yVSLAoGBAP7tjUErm9ciDzLnXe6+toV2E1e1D/a/z2t/GxbbxPYklAUeWaPLhcsZ
-#02=>9B7aUx7BGeB+lPI5sP//hc8ouFTTgE3Y9nsgOjEY7HFIDSG1xrN+MnuY+ztNeDif
-#02=>Jfs44vMdP32pAwJqgtKtg1KiILqx81XeMYhBynpwooISJTioW5FRAoGBAMleSirb
-#02=>GrOZtrsj2s0Uz6LAtPpQfGaQp/5CVYYt/QlUUnR0fhgCaT8DduCrbhOJcmoo5V1K
-#02=>EimEQPhAM6JFMpIuDBp+kQT7FKo1Rl6J+igId5N/jc72nm1kpYBfzGLlAqxU13jJ
-#02=>ULXBU+QU5ZLrRESrTwZun9ytXvwR/O7HMCnxAoGBAPek755k4IfX8YHoEhsfqf39
-#02=>rGPUdehijvq1/Q7kHmtz/YFQrtmhIuKOPZpQbgCeU6bhXX2XIPivFEWVRVm3g/Pa
-#02=>FAKUVclLaVgaG2KTU09HZD2NS9M1UDcBAFMhUX50LwxbCjzcfxXNIHwod5DKH5U+
-#02=>Pr7g01JeycAu4lRLxqprAoGASstAHovlWKbO18t9J5oD+p9ZKcYfk89UVx/z4WGJ
-#02=>3uTOK0E2JizIAXZQudlGJIOCRLAarZ8rUT/AXDUafhmzsqNjlM/suLUHrO83ZPFr
-#02=>izZYTLpZPj5YGgDPwfeyUJ40MWFXWL/NhVZvndvgPeJbL3LUNZbNqby84UiChJMg
-#02=>hJsCgYA5KiUh42OZgHjez5SGvDBoBaOPwutk5O5ufESfgpzh3W0r6iA/dy+HesYV
-#02=>7YDhwSXl7zQgWHKb76SE1/fQcBYOd4TcKzbq4IDU1+oibcOXRMOGkg6vdsXhAvdU
-#02=>ADiALhM7Gqxc0eIMPSw4REhLiS2XNlTSL8fxPHMVJSIuPn+SXw==
-#02=>-----END RSA PRIVATE KEY-----
