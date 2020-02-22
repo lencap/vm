@@ -19,7 +19,7 @@ except ImportError:
 
 
 # Global variables
-prgVer    = 'v2.6.0'
+prgVer    = 'v2.6.1'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -31,25 +31,25 @@ vmuser    = 'vmuser'                       # Default user
 
 def Usage():
   p = prgName
-  print("Simple CentOS VM Manager {}\n"
-        "{} list                               List all VMs\n"
-        "{} create    <vmName> <imgName>       Create VM using imgName\n"
-        "{} del       <vmName> [f]             Delete VM. Force option\n"
-        "{} start     <vmName> [g]             Start VM. GUI option\n"
-        "{} stop      <vmName> [f]             Stop VM. Force option\n"
-        "{} ssh       <vmName> [<command>]     SSH into or optionally run command on VM\n"
-        "{} prov      [<vmConf>|c]             Provision VM(s) in vm.conf, or optional given file; Create skeleton file option\n"
-        "{} info      <vmName>                 Dump VM details\n"
-        "{} mod       <vmName> <cpus> [<mem>]  Modify VM CPUs and memory. Memory defaults to 1024\n"
-        "{} ip        <vmName> <ip>            Set VM IP address\n"
-        "{} imglist                            List all available images\n"
-        "{} imgcreate <imgName> <vmName>       Create imgName from existing VM\n"
-        "{} imgpack                            How-to create brand new OVA image with Hashicorp packer\n"
-        "{} imgimp    <imgFile>                Import image. Make available to this program\n"
-        "{} imgdel    <imgName> [f]            Delete image. Force option\n"
-        "{} netlist                            List available networks\n"
-        "{} netadd    <ip>                     Create new network\n"
-        "{} netdel    <vboxnetX>               Delete given network"
+  print("Simple Linux VM Manager {}\n"
+        "{} list                                   List all VMs\n"
+        "{} create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName\n"
+        "{} del       <vmName> [f]                 Delete VM. Force option\n"
+        "{} start     <vmName> [g]                 Start VM. GUI option\n"
+        "{} stop      <vmName> [f]                 Stop VM. Force option\n"
+        "{} ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
+        "{} prov      [<vmConf>|c]                 Provision VM(s) in vm.conf, or optional given file; Create skeleton file option\n"
+        "{} info      <vmName>                     Dump VM details\n"
+        "{} mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
+        "{} ip        <vmName> <ip>                Set VM IP address\n"
+        "{} imglist                                List all available images\n"
+        "{} imgcreate <imgName> <vmName>           Create imgName from existing VM\n"
+        "{} imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
+        "{} imgimp    <imgFile>                    Import image. Make available to this program\n"
+        "{} imgdel    <imgName> [f]                Delete image. Force option\n"
+        "{} netlist                                List available networks\n"
+        "{} netadd    <ip>                         Create new network\n"
+        "{} netdel    <vboxnetX>                   Delete given network"
         .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
   sys.exit(0)
 
@@ -76,7 +76,7 @@ def CreateVMConf():
             "#vmcopy  = \"./bootstrap.sh /tmp/bootstrap.sh\"\n"
             "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
             "#[dev2]\n"
-            "#image   = centos7.7.1908-vm.ova\n"
+            "#image   = ubuntu1604-vm.ova\n"
             "#netip   = 10.11.12.3\n")
   os.chmod(vmconf, 0o644)
 
@@ -249,7 +249,7 @@ def vmList():
 
 def vmCreate(args):
   if len(args) < 2 or len(args) > 2:
-    print("Usage: vm create <vmName> <imgName>")
+    print("Usage: vm create <vmName> <[ovaFile|imgName]>")
     return 1
   (vmName, imgName) = args
 
@@ -260,9 +260,14 @@ def vmCreate(args):
   except:
     pass   # ... let' continue creating VM
 
-  imgFile = os.path.join(vmhome, imgName)
-  if not os.path.isfile(imgFile):
-    print("Image named '{}' doesn't exist.".format(imgName))
+  imgFile       = imgName                        # To see if it's a file (hopefully OVA)
+  existingImage = os.path.join(vmhome, imgName)  # To see if it's an existing image
+  if os.path.isfile(imgFile):
+    imgFile = os.path.abspath(imgFile)           # It's a file
+  elif os.path.isfile(existingImage):
+    imgFile = os.path.abspath(existingImage)     # It's one of our images
+  else:
+    print("'{}' is neither an OVA file, nor an existing image".format(imgName))
     return 1
 
   # Inspect OVA before importing into this new VM we're creating from it
@@ -1166,7 +1171,7 @@ def imgPack():
     "To create a brand new OVA image from an ISO, first make sure you install\n"
     "'git' and 'packer', then do the following:\n\n"
     "1. git clone https://github.com/lencap/osimages\n"
-    "2. cd osimages/centos\n"
+    "2. cd osimages. Then cd centos or ubuntu. Let say it's centos.\n"
     "3. packer validate centos7.7.1908-vm-ova.json\n"
     "4. packer build centos7.7.1908-vm-ova.json\n"
     "5. {} imgimp output-virtualbox-iso/centos7.7.1908-vm.ova\n"
