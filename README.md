@@ -1,7 +1,7 @@
 # VM
-A small utility to more easily manage [VirtualBox](https://www.virtualbox.org/) Linux VMs from the __macOS__ command line. This `vm` utility is similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html) utility, but much simpler. It's a bit like having a dedicated Vagrant for managing __only__ Linux VMs on macOS.
+Simple utility manage [VirtualBox](https://www.virtualbox.org/) Linux VMs from the __macOS__ command line. This `vm` utility is similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html) utility, but far simpler. It's a bit like having a dedicated Vagrant for managing __only__ Linux VMs on __macOS__.
 
-There are other bits and pieces in this repo. There's an original Bash versions for posterity. And there is also a __C__ language version in its initial development stages, to learn more about VirtualBox C bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
+There are other bits and pieces in this repo. There's an original Bash versions for posterity. Also a __C__ language version still being developed, to learn more about VirtualBox C bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
 
 ## Todo
 - Allow easy switching/update of username and ssh key
@@ -11,13 +11,14 @@ There are other bits and pieces in this repo. There's an original Bash versions 
 - Document the code a little better
 - Say more about the networking of these VMs. Like other similiar utilities, it sets NIC1 as NAT type for communicating out and NIC2 as Host-Only to communicate with each other.
 - Explain that specially packaged OVAs are required. See `vm imgpack` for how to create them, etc
+- List shoulw display OS type and version
 
 ## Provissioning VMs
 The `vm prov` command provisions VMs automatically based on a simple configuration file. This is the Vagrant similarity.
 
-You can create as sample config, skeleton file by running `vm prov c`. This default config file name is `vm.conf`, which you can leave named as is, read it, edit accordingly, then provision the content with `vm prov`.
+You can create as sample skeleton config file by running `vm prov c`. This default file will be named `vm.conf`, which the `vm prov` command will read and follow to provision things accordingly.
 
-Alternatively, you can rename the file as you wish, to have multiple of these provisioning config files in your repo. To provision them run `vm prov myprov.conf`, and so on.
+Alternatively, you can rename the file as you wish, to have multiple of these provisioning config files in your repo, which you can then provision as `vm prov myprov.conf`, and so on.
 
 ## Prerequisites
 Tested on macOS v10.15.3 with VirtualBox v6.1.2
