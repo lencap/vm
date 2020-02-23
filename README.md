@@ -1,5 +1,5 @@
 # VM
-Simple utility manage [VirtualBox](https://www.virtualbox.org/) Linux VMs from the __macOS__ command line. This `vm` utility is similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html) utility, but far simpler. It's a bit like having a dedicated Vagrant for managing __only__ Linux VMs on __macOS__.
+A simple utility to manage [VirtualBox](https://www.virtualbox.org/) Linux VMs from the __macOS__ command line. This `vm` utility is similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html) utility, but far simpler. It's a bit like having a dedicated Vagrant for managing __only__ Linux VMs on __macOS__.
 
 There are other bits and pieces in this repo. There's an original Bash versions for posterity. Also a __C__ language version still being developed, to learn more about VirtualBox C bindings. See [c folder](https://github.com/lencap/vm/tree/master/c).
 
