@@ -19,7 +19,7 @@ except ImportError:
 
 
 # Global variables
-prgVer    = 'v2.6.1'
+prgVer    = 'v2.6.2'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -47,10 +47,11 @@ def Usage():
         "{} imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
         "{} imgimp    <imgFile>                    Import image. Make available to this program\n"
         "{} imgdel    <imgName> [f]                Delete image. Force option\n"
-        "{} netlist                                List available networks\n"
-        "{} netadd    <ip>                         Create new network\n"
-        "{} netdel    <vboxnetX>                   Delete given network"
-        .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+        "{} nettype   <vmName> <ho[bri]>           Default is HostOnly, with Bridge as optional\n"
+        "{} netlist                                List available HostOnly networks\n"
+        "{} netadd    <ip>                         Create new HostOnly network\n"
+        "{} netdel    <vboxnetX>                   Delete given HostOnly network"
+        .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
   sys.exit(0)
 
 
@@ -61,11 +62,11 @@ def CreateVMConf():
             "# provision the VMs defined here. Each VM requires its own section name,\n"
             "# which becomes the VM name. Then there are 6 other possible keys you can\n"
             "# define. Two of which are mandatory (image and netip). The other 4 (cpus,\n"
-            "# memory, vmcopy, and vmrun) are optional. Lines starting with a hash(#)\n"
-            "# are treated as comments. Spaces can only be used within double quotes (\").\n"
-            "# vmcopy and vmrun are perfect for copying/running bootstrapping scripts.\n"
-            "# Note these last 2 can only appear once a piece, as duplicate keys are not\n"
-            "# yet allowed. It is best to put everything inside just one bootstrapping\n"
+            "# memory, vmcopy, vmrun, and nettype) are optional. Lines starting with a\n"
+            "# hash(#) are treated as comments. Spaces can only be used within double\n"
+            "# quotes (\"). vmcopy and vmrun are perfect for copying/running bootstrapping\n"
+            "# scripts. Note these last 2 can only appear once a piece, as duplicate keys\n"
+            "# are not yet allowed. It is best to put everything inside just one bootstrapping\n"
             "# script. You can also name this file anything you want and provision with\n"
             "# 'vm prov MYFILE'.\n\n"
             "#[dev1]\n"
@@ -77,7 +78,8 @@ def CreateVMConf():
             "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
             "#[dev2]\n"
             "#image   = ubuntu1604-vm.ova\n"
-            "#netip   = 10.11.12.3\n")
+            "#netip   = 10.11.12.3\n"
+            "#nettype = bri\n")
   os.chmod(vmconf, 0o644)
 
 
@@ -201,6 +203,7 @@ def setIP(vm, ip):
   if newHOName == None:  # If not assigned by above loop, it means we have to create new vboxnet
     newHOName = netAdd([ipNet + '.1'])
   (vmMuta, session) = openSession(vm, const.LockType_Write)
+
   # Set enp0s3 as NAT for routing external traffic, and no SSH port forwarding
   nic0 = vmMuta.getNetworkAdapter(0)
   nic0.enabled           = True
@@ -214,6 +217,7 @@ def setIP(vm, ip):
     # Remove ssh-port forwarding rule if it exists
     if pfRule.split(",")[0] == "ssh":
       nic0.NATEngine.removeRedirect("ssh")
+  
   # Set enp0s8 as HostOnly, and as the primary interface
   nic1 = vmMuta.getNetworkAdapter(1)
   nic1.enabled           = True
@@ -298,19 +302,19 @@ def vmCreate(args):
   OVFValues = descList[2]          # 3rd list is original 'OVFValues' saved in the OVF
   VBoxValues = descList[3]         # 4th list is 'VBoxValues' suggestions for new VMs to be created with this OVF
   extraConfigValues = descList[4]  # 5th list is 'extraConfigValues' for additional configs for each entry
+  enableValue = [True] * (dCount)  # Create/init boolean list assuming all items will remain enabled
 
   # Note: The index in each list corresponds to values for that specific description. so
   # For instance if types[2] = 3, the Name of the machine, then actual name is stored in
   # VBoxValues[2]. The most important value for each description is whether or not it is
   # enabled, which is held in list enableValue[]
 
-  # Now let's import all resources defined in the OVA, but disable USB and Sound Card.
-  # Always create VM with: 1 HDD, 1 cpu, 1GB RAM, and NAT+HostOnly networking
-
-  enableValue = [True] * (dCount) # Create/init boolean list assuming all items will remain enabled
+  # Now let's import all resources defined in the OVA
+  # Always create VM with: 1 HDD, 1 cpu, 1GB RAM, and 2 NICS (NAT & HostOnly)
 
   for i in range(dCount):
     if types[i] in [14, 16, 17, 19, 20, 22, 23]:  # Disable unused virtual hardware
+      # Disable USB(22), Sound Card (23) and others that are not really needed
       enableValue[i] = False
       continue
 
@@ -338,10 +342,10 @@ def vmCreate(args):
   # Update the values for this machine we're creating
   sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
 
-  importOptions = []  # Empty means new MAC addresses will be generated, while [1, 2] means
+  importOptions = []  # Empty list means new MAC addresses will be generated, while [1, 2] means
                       # don't generate new MAC addresses for regular (1) and NAT(2) interfaces
   
-  # Import the appliance, creating the VM, and dot the progress while we wait
+  # Import the appliance, create the VM, and wait till it's complete
   progress = appliance.importMachines(importOptions)
   while not progress.completed:
     time.sleep(0.2)
@@ -357,7 +361,7 @@ def vmCreate(args):
   # Also enable RTC/UTC, I/O APIC, and disable BIOS boot menu
   (vmMuta, session) = openSession(vm, const.LockType_Write)
   vmMuta.setBootOrder(1, const.DeviceType_HardDisk)
-  vmMuta.RTCUseUTC   = True
+  vmMuta.RTCUseUTC  = True
   vmMuta.BIOSSettings.IOAPICEnabled = True
   vmMuta.BIOSSettings.bootMenuMode  = const.BIOSBootMenuMode_Disabled
   closeSession(session)  # Close write session
@@ -769,6 +773,36 @@ def getNetList():
     if nic.interfaceType == 2:  # HostNetworkInterfaceType  0=None  1=Bridged  2=HostOnly 
       netList.append(nic)
   return netList
+
+
+def netType(args):
+  vmName = nettype = None
+  if len(args) == 2:
+    (vmName, nettype) = args
+  else:
+    print("Usage: vm nettype <vmName> <ho[bri]>") 
+    return 1
+
+  # 1. Set eth0 AttachmentType to Null
+  # 2. Set eth1 AttachmentType to Bridged
+
+  ip = args[0]
+  if invalidIP(ip):
+    print("IP address '{}' is invalid".format(ip))
+    return 1
+  if ip.split('.')[3] != "1":
+    print("Gateway IP address must end in .1")
+    return 1
+  (progress, newNet) = vbox.host.createHostOnlyNetworkInterface()
+  # NOTE: Another poorly documented API function (not 100% clear it returns 2 values)
+  while not progress.completed:
+    time.sleep(0.01)
+  if newNet.name == None:
+    print("Error creating new vboxnet")
+    return None
+  # Assign given IP address to the new vboxnet
+  newNet.enableStaticIPConfig(ip, '255.255.255.0')
+  return newNet.name
 
 
 def netList():
@@ -1219,6 +1253,7 @@ def main(args=None):
     'imgpack':    lambda: imgPack(),
     'imgdel':     lambda: imgDelete(sys.argv[2:]),
     'imgimp':     lambda: imgImport(sys.argv[2:]),
+    'nettype':    lambda: netType(sys.argv[2:]),
     'netlist':    lambda: netList(),
     'netadd':     lambda: netAdd(sys.argv[2:]),
     'netdel':     lambda: netDelete(sys.argv[2:]),
