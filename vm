@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import traceback
 from configparser import ConfigParser
+
 try:
   from vboxapi import VirtualBoxManager
 except ImportError:
@@ -39,7 +40,7 @@ def Usage():
         "{} stop      <vmName> [f]                 Stop VM. Force option\n"
         "{} ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
         "{} prov      [<vmConf>|c]                 Provision VM(s) in vm.conf, or optional given file; Create skeleton file option\n"
-        "{} info      <vmName>                     Dump VM details\n"
+        "{} info      <vmName>                     Dump subset of all VM details for common troubleshooting\n"
         "{} mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
         "{} ip        <vmName> <ip>                Set VM IP address\n"
         "{} imglist                                List all available images\n"
@@ -47,7 +48,7 @@ def Usage():
         "{} imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
         "{} imgimp    <imgFile>                    Import image. Make available to this program\n"
         "{} imgdel    <imgName> [f]                Delete image. Force option\n"
-        "{} nettype   <vmName> <ho[bri]>           Default is HostOnly, with Bridge as optional\n"
+        "{} nettype   <vmName> <ho[bri]>           Set NIC type to Bridge as option; default is always HostOnly\n"
         "{} netlist                                List available HostOnly networks\n"
         "{} netadd    <ip>                         Create new HostOnly network\n"
         "{} netdel    <vboxnetX>                   Delete given HostOnly network"
@@ -141,6 +142,13 @@ def closeSession(session):
   return 0
 
 
+def getNetType(vm):
+  netType = vm.getGuestPropertyValue('/vm/nettype')  # Try official store location for this program
+  if netType == '' or netType == None:
+    netType  = 'ho'                                  # Default to it being HostOnly 
+  return netType
+
+
 def getIP(vm):
   ip = vm.getGuestPropertyValue('/vm/ip')   # Try official store location for this program
   if ip == '' or ip == None:
@@ -149,9 +157,17 @@ def getIP(vm):
 
 
 def usedIP(ip):
+  # Check if IP is defined as belonging to an existing VM
   for vm in vbox.getMachines():
     if getIP(vm) == ip:
       return True
+
+  # Check if IP is active
+  # Send 1 packet and wait 300 milliseconds for a reply
+  # A non-zero value return means the IP is NOT alive, and probably not used
+  IPNotInUse = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
+  if IPNotInUse:
+    return False
   return False
 
 
@@ -175,71 +191,86 @@ def invalidIP(ip):
 
 
 def setIP(vm, ip):
-  # Store IP in official location and setup net devices. Note that like Vagrant
-  # and other similar utilities, the network configuration is 2 interfaces:
-  #   enp0s3 w/ NAT networking       =  to access external world
-  #   enp0s8 w/ HostOnly networking  =  for intra-network connectivity
-
+  # Set up network devices and store IP in official location
   if invalidIP(ip):
     print("IP address '{}' is invalid".format(ip))
-    return 1
-  if ip.split('.')[3] == '1':
-    print("IP ending in .1 is reserved for the vboxnet gateway itself")
-    return 1
+    return False
+
   for vmTmp in vbox.getMachines():
     if vmTmp.name == vm.name:
       continue   # Skip this machine itself
     if getIP(vmTmp) == ip:
       print("Error: IP '{}' is already taken by VM '{}'".format(ip, vmTmp.name))
-      return 1
-  ipNet = '.'.join(ip.split('.')[:3])  # Derive IP's network address (the first 3 octects)
-  # If given IP address fits into an existing vboxnet network, then
-  # put it in that vboxnet, else create a new vboxnet
-  newHOName = newHOIP = None
-  for tmpHO in getNetList():
-    if ipNet == '.'.join(tmpHO.IPAddress.split('.')[:3]):  # vboxnet network exists so lets use it
-      newHOName = tmpHO.name
-      break
-  if newHOName == None:  # If not assigned by above loop, it means we have to create new vboxnet
-    newHOName = netAdd([ipNet + '.1'])
-  (vmMuta, session) = openSession(vm, const.LockType_Write)
+      return False
 
-  # Set enp0s3 as NAT for routing external traffic, and no SSH port forwarding
-  nic0 = vmMuta.getNetworkAdapter(0)
-  nic0.enabled           = True
-  nic0.attachmentType    = const.all_values("NetworkAttachmentType")["NAT"] 
-  nic0.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
-  nic0.bridgedInterface  = None
-  nic0.hostOnlyInterface = None
-  nic0.NATEngine.DNSPassDomain = True
-  nic0.NATEngine.DNSUseHostResolver = True
-  for pfRule in nic0.NATEngine.getRedirects():
-    # Remove ssh-port forwarding rule if it exists
-    if pfRule.split(",")[0] == "ssh":
-      nic0.NATEngine.removeRedirect("ssh")
-  
-  # Set enp0s8 as HostOnly, and as the primary interface
-  nic1 = vmMuta.getNetworkAdapter(1)
-  nic1.enabled           = True
-  nic1.attachmentType    = const.all_values("NetworkAttachmentType")["HostOnly"] 
-  nic1.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
-  nic1.bridgedInterface  = None
-  nic1.hostOnlyInterface = newHOName
+  if ip.split('.')[3] == '1':
+    print("IP ending in .1 is reserved for the vboxnet gateway itself")
+    return False
+
+  (vmMuta, session) = openSession(vm, const.LockType_Write)  # Get read/write handle on VM object
+
+  netType = getNetType(vm)
+  if netType == 'bri':
+    # If netType = Bridged
+    # DISABLE enp0s3 w/ Null               =  No networking
+    nic0 = vmMuta.getNetworkAdapter(0)
+    nic0.enabled = False
+    # ENABLE enp0s8 w/ Bridge networking   =  Real-world networking (assumes local admin access)
+    nic1 = vmMuta.getNetworkAdapter(1)
+    nic1.enabled          = True
+    nic1.adapterType      = const.all_values("NetworkAdapterType")['Virtio']
+    nic1.attachmentType   = const.all_values("NetworkAttachmentType")["Bridged"] 
+    nic1.bridgedInterface = getMainNIC()   # Find and use host's main NIC to bridge to
+  else:  
+    # For netType = HostOnly
+    #   ENABLE enp0s3 w/ NAT networking       =  to access external world
+    #   ENABLE enp0s8 w/ HostOnly networking  =  for intra-network connectivity
+    ipNet = '.'.join(ip.split('.')[:3])  # Get assumed /24 network address (first 3 octects)
+    # If given IP address fits into an existing vboxnet network, then
+    # put it in that vboxnet, else create a new vboxnet
+    newHOName = newHOIP = None
+    for tmpHO in getNetList():
+      # Use existing HostOnly vboxnet network if it exists
+      if tmpHO.interfaceType == 2 and ipNet == '.'.join(tmpHO.IPAddress.split('.')[:3]):
+        newHOName = tmpHO.name
+        break
+    if newHOName == None:  # If not assigned by above loop, it means we have to create new vboxnet
+      newHOName = netAdd([ipNet + '.1'])
+
+    # Enable enp0s3 as NAT for routing external traffic, and no SSH port forwarding
+    nic0 = vmMuta.getNetworkAdapter(0)
+    nic0.enabled           = True
+    nic0.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
+    nic0.attachmentType    = const.all_values("NetworkAttachmentType")["NAT"] 
+    nic0.NATEngine.DNSPassDomain = True
+    nic0.NATEngine.DNSUseHostResolver = True
+    for pfRule in nic0.NATEngine.getRedirects():
+      # Remove ssh-port forwarding rule if it exists
+      if pfRule.split(",")[0] == "ssh":
+        nic0.NATEngine.removeRedirect("ssh")
+    
+    # Enable enp0s8 as HostOnly, and as the primary interface
+    nic1 = vmMuta.getNetworkAdapter(1)
+    nic1.enabled           = True
+    nic1.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
+    nic1.attachmentType    = const.all_values("NetworkAttachmentType")["HostOnly"] 
+    nic1.hostOnlyInterface = newHOName
 
   # Store official IP address for this VM in its /vm/* Guest Additions property area
   vmMuta.setGuestPropertyValue("/vm/name", vmMuta.name)
+  vmMuta.setGuestPropertyValue("/vm/nettype", netType)
   vmMuta.setGuestPropertyValue("/vm/ip", ip)
   vmMuta.setGuestPropertyValue("/vm/netmask",   "255.255.255.0")
   vmMuta.setGuestPropertyValue("/vm/broadcast", ".".join(ip.split(".")[:3]) + ".255")
   closeSession(session)
-  return 0
+  return True
 
 
 def vmList():
   if len(vbox.getMachines()) == 0:
     return
-  fmt = "{:34}{:<5}{:<7}{:<12}{}"
-  print(fmt.format('NAME', 'CPU', 'MEM', 'STATE', 'SSH'))
+  fmt = "{:34}{:<12}{:<5}{:<7}{:<12}{}"
+  print(fmt.format('NAME', 'OS', 'CPU', 'MEM', 'STATE', 'SSH'))
   for vm in vbox.getMachines():
     state = enumElem("MachineState", vm.state)
     ip = getIP(vm)
@@ -248,7 +279,7 @@ def vmList():
       name = name[:30] + '...'
     else:
       name = vm.name
-    print(fmt.format(name, vm.CPUCount, vm.memorySize, state, sshConn))
+    print(fmt.format(name, vm.OSTypeId, vm.CPUCount, vm.memorySize, state, sshConn))
 
 
 def vmCreate(args):
@@ -290,14 +321,14 @@ def vmCreate(args):
   descList = sysDesc[0].getDescription() # Get descriptions for the only VM we expect in the OVA
   dCount = sysDesc[0].count              # Get the number of descriptions
   types = descList[0]                    # 1st list holds all the VirtualSystemDescriptionType
-          # Ignore                 01  OS                     02  Name                   03
-          # Product                04  Vendor                 05  Version                06
-          # ProductUrl             07  VendorUrl              08  Description            09
-          # License                10  Miscellaneous          11  CPU                    12
-          # Memory                 13  HardDiskControllerIDE  14  HardDiskControllerSATA 15
-          # HardDiskControllerSCSI 16  HardDiskControllerSAS  17  HardDiskImage          18
-          # Floppy                 19  CDROM                  20  NetworkAdapter         21
-          # USBController          22  SoundCard              23  SettingsFile           24
+          # 01 = Ignore                  02 = OS                     03 = Name                   
+          # 04 = Product                 05 = Vendor                 06 = Version                
+          # 07 = ProductUrl              08 = VendorUrl              09 = Description            
+          # 10 = License                 11 = Miscellaneous          12 = CPU                    
+          # 13 = Memory                  14 = HardDiskControllerIDE  15 = HardDiskControllerSATA 
+          # 16 = HardDiskControllerSCSI  17 = HardDiskControllerSAS  18 = HardDiskImage          
+          # 19 = Floppy                  20 = CDROM                  21 = NetworkAdapter         
+          # 22 = USBController           23 = SoundCard              24 = SettingsFile           
   refs = descList[1]               # 2nd list is 'refs' use by some descriptions
   OVFValues = descList[2]          # 3rd list is original 'OVFValues' saved in the OVF
   VBoxValues = descList[3]         # 4th list is 'VBoxValues' suggestions for new VMs to be created with this OVF
@@ -313,8 +344,8 @@ def vmCreate(args):
   # Always create VM with: 1 HDD, 1 cpu, 1GB RAM, and 2 NICS (NAT & HostOnly)
 
   for i in range(dCount):
-    if types[i] in [14, 16, 17, 19, 20, 22, 23]:  # Disable unused virtual hardware
-      # Disable USB(22), Sound Card (23) and others that are not really needed
+    if types[i] in [14, 16, 17, 19, 20, 22, 23]:
+      # Disable USB(22), Sound Card (23), and other virtual hardware that are not really used/needed
       enableValue[i] = False
       continue
 
@@ -357,13 +388,9 @@ def vmCreate(args):
     print("Error creating VM")
     return 1
 
-  # Get a write lock session on the VM and ensure disk1 is the only bootable device, and
-  # Also enable RTC/UTC, I/O APIC, and disable BIOS boot menu
+  # Get a write lock session on the VM and ensure disk1 is the only bootable device
   (vmMuta, session) = openSession(vm, const.LockType_Write)
   vmMuta.setBootOrder(1, const.DeviceType_HardDisk)
-  vmMuta.RTCUseUTC  = True
-  vmMuta.BIOSSettings.IOAPICEnabled = True
-  vmMuta.BIOSSettings.bootMenuMode  = const.BIOSBootMenuMode_Disabled
   closeSession(session)  # Close write session
 
   # Let's make sure this VM gets a proper IP address
@@ -373,7 +400,6 @@ def vmCreate(args):
     if usedIP(ip):                  # Call nextUniqueIP if global default is already taken
       ip = nextUniqueIP(ip)
   setIP(vm, ip)
-  # We're trusting setIP won't failed after so many checks 
   return 0
 
 
@@ -410,9 +436,8 @@ def vmStart(args):
   if invalidIP(ipAddr):
     print("IP address '{}' is invalid.".format(ipAddr))
     return 1
-  ret = setIP(vm, ipAddr)    # Store IP in official location and setup net devices
-  if ret != 0:               # Don't start if we couldn't set IP address
-    return 1
+  if not setIP(vm, ipAddr):    # Store IP in official location and setup net devices
+    return 1                   # Don't start if we couldn't set IP address
 
   # Launch VM process
   session = vboxmgr.getSessionObject(vbox)    # Get ISession object
@@ -519,9 +544,11 @@ def noSSH(ip):
     else:
       return True
   
+  # Check if IP is active
   # Send 1 packet and wait 300 milliseconds for a reply
-  liveIP = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
-  if liveIP:
+  # A non-zero value return means the IP is NOT alive, and probably not used
+  IPNotInUse = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
+  if IPNotInUse:
     return True
 
 
@@ -654,29 +681,11 @@ def vmInfo(args):
   print(fmt.format("OS_Type_ID", vm.OSTypeId))
   print(fmt.format("CPUs", vm.CPUCount))
   print(fmt.format("RAM(MB)", vm.memorySize))
-  print(fmt.format("ChipsetType", enumElem("ChipsetType", vm.chipsetType)))
-  print(fmt.format("ClipboardMode", enumElem("ClipboardMode", vm.clipboardMode)))
   print(fmt.format("MachineStatus", enumElem("MachineState", vm.state)))
   print(fmt.format("SessionStatus", enumElem("SessionState", vm.sessionState)))
-  if vm.teleporterEnabled:
-    print(fmt.format("Teleporter port/pwd" , vm.teleporterPort + '/' + vm.teleporterPassword))
-  print(fmt.format("ACPI", vm.BIOSSettings.ACPIEnabled))
-  print(fmt.format("APIC", vm.BIOSSettings.IOAPICEnabled))
-  print(fmt.format("Hardware_Virtualization", vm.getHWVirtExProperty(const.HWVirtExPropertyType_Enabled)))
-  print(fmt.format("Use_UTC", vm.RTCUseUTC))
-  if vm.audioAdapter.enabled:
-    print(fmt.format("Audio_chip:host-driver", str(vm.audioAdapter.audioController) + ':' + str(vm.audioAdapter.audioDriver)))
-  print(fmt.format("Keyboard", enumElem("KeyboardHIDType", vm.keyboardHIDType)))
-  print(fmt.format("Pointing_Device", enumElem("PointingHIDType", vm.pointingHIDType)))
-  # OSE has no VRDE
-  try:
-    print(fmt.format("VRDE_Server_Enabled", vm.VRDEServer.enabled))
-  except:
-    pass
+
   for c in vboxmgr.getArray(vm, 'USBControllers'):
     print(fmt.format("USB Controllers", 'type=' + c.type + ' ' + 'standard=' + c.USBStandard))
-  print(fmt.format("IOCacheEnabled", vm.IOCacheEnabled))
-  print(fmt.format("IOCacheSize(MB)", vm.IOCacheSize))
   storageControllers = vboxmgr.getArray(vm, 'storageControllers')
   if storageControllers:
     for c in storageControllers:
@@ -684,7 +693,7 @@ def vmInfo(args):
   attaches = vboxmgr.getArray(vm, 'mediumAttachments')
   if attaches:
     for a in attaches:
-      print(fmt.format("Media", 'controller=' + a.controller + '   ' + 'port/dev=' + str(a.port) + ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
+      print(fmt.format("MEDIA", 'controller=' + a.controller + '   ' + 'port/dev=' + str(a.port) + ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
       medium = a.medium
       if a.type == const.DeviceType_HardDisk:
         print(fmt.format("  ID", medium.id))
@@ -701,7 +710,7 @@ def vmInfo(args):
 
   # Note: The API documentation has getSharedFolders() func incorectly listed as sharedFolders()
   if len(vm.getSharedFolders()) > 0:
-    print(fmt.format("Shared_Folders", ''))
+    print(fmt.format("SHARED_FOLDERS", ''))
     for sf in vm.getSharedFolders():
       print(fmt.format("  Name", sf.name))
       print(fmt.format("    HostPath", sf.hostPath))
@@ -711,7 +720,7 @@ def vmInfo(args):
       print(fmt.format("    LastAccessErr", sf.lastAccessError))
 
   # Network Adapters: We only care about nic0 and nic1
-  print(fmt.format("Network_Adapters", ''))
+  print(fmt.format("NETWORK_ADAPTERS", ''))
   for slot in [0, 1]:
     nic = vm.getNetworkAdapter(slot)
     nicStatus = "Disabled"
@@ -755,10 +764,10 @@ def vmInfo(args):
   propList = vm.enumerateGuestProperties(propFilter)
   # The SDK documentation again confusingly states that enumerateGuestProperties returns a 'void'
   # when in actuality it returns a list of 4 lists data structure, which we'll call propList. We only
-  # care about Names and Values list, and we disregard Timestamps and Flags
+  # care about Names and Values lists, and we disregard Timestamps and Flags
   propNames = propList[0]
   propValues = propList[1]
-  propDict = {}                           # Create/use a dictionary for printing them sorted
+  propDict = {}                     # Create/use a dictionary for printing them sorted
   for i in range(len(propNames)):
     propDict[propNames[i]] = propValues[i]
   for key in sorted(propDict.iterkeys()):
@@ -766,11 +775,23 @@ def vmInfo(args):
   return 0
 
 
+def getMainNIC():
+  nicList = getNetList()
+  for nic in nicList:
+    # Return first NIC name with valid IP address 
+    if nic.name[:2] != 'en':
+      continue
+    if nic.IPAddress == "0.0.0.0":
+      continue
+    return nic.name
+  return ''
+
+
 def getNetList():
-  # Get list of vboxnet networks defined on this host. We only care about HostOnly networks
+  # Get list of Bridged and HostOnly networks defined on this host
   netList = []
   for nic in vbox.host.getNetworkInterfaces():
-    if nic.interfaceType == 2:  # HostNetworkInterfaceType  0=None  1=Bridged  2=HostOnly 
+    if nic.interfaceType in [1, 2]:  # HostNetworkInterfaceType  1=Bridged  2=HostOnly 
       netList.append(nic)
   return netList
 
@@ -782,43 +803,42 @@ def netType(args):
   else:
     print("Usage: vm nettype <vmName> <ho[bri]>") 
     return 1
-
-  # 1. Set eth0 AttachmentType to Null
-  # 2. Set eth1 AttachmentType to Bridged
-
-  ip = args[0]
-  if invalidIP(ip):
-    print("IP address '{}' is invalid".format(ip))
+  if nettype not in ['ho', 'bri']:
+    print("Usage: vm nettype <vmName> <ho[bri]>") 
     return 1
-  if ip.split('.')[3] != "1":
-    print("Gateway IP address must end in .1")
+
+  try:
+    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+  except:
+    print("VM '{}' doesn't exist".format(vmName))
     return 1
-  (progress, newNet) = vbox.host.createHostOnlyNetworkInterface()
-  # NOTE: Another poorly documented API function (not 100% clear it returns 2 values)
-  while not progress.completed:
-    time.sleep(0.01)
-  if newNet.name == None:
-    print("Error creating new vboxnet")
-    return None
-  # Assign given IP address to the new vboxnet
-  newNet.enableStaticIPConfig(ip, '255.255.255.0')
-  return newNet.name
+  if vm.state == const.MachineState_Running:   
+    print("VM '{}' needs to be powered off for this".format(vmName))
+    return 1
+
+  (vmMuta, session) = openSession(vm, const.LockType_Write)
+  vmMuta.setGuestPropertyValue("/vm/nettype", nettype)
+  closeSession(session)
+  return 0
 
 
 def netList():
   netList = getNetList()
-  if len(netList) == 0:
-    return 0
-  else:
-    fmt = "{:20}{:12}{:16}{:16}{}"
-    print(fmt.format("NAME", "DHCP", "GATEWAY", "NETMASK", "STATUS"))
+  if len(netList) != 0:
+    fmt = "{:24}{:12}{:12}{:16}{:16}{}"
+    print(fmt.format("NAME", "TYPE", "DHCP", "IPADDRESS", "NETMASK", "STATUS"))
     for net in netList:
       dhcpStatus = 'Disabled'
       if net.DHCPEnabled:
         dhcpStatus = 'Enabled'
-      print(fmt.format(net.name, dhcpStatus, net.IPAddress, \
-            net.networkMask, enumElem("HostNetworkInterfaceStatus", net.status)))
-            # HostNetworkInterfaceStatus Unknown=0, Up=1, Down=2
+      print(fmt.format(net.name, \
+                       enumElem("HostNetworkInterfaceType", net.interfaceType), \
+                       # HostNetworkInterfaceType  1=Bridged, 2=HostOnly
+                       dhcpStatus, \
+                       net.IPAddress, \
+                       net.networkMask, \
+                       enumElem("HostNetworkInterfaceStatus", net.status)))
+                       # HostNetworkInterfaceStatus 0=Unknown, 1=Up, 2=Down
   return 0
 
 
@@ -846,17 +866,18 @@ def netAdd(args):
 
 
 def netDelete(args):
+  # Delete given HostOnly network name
   if len(args) != 1:
     print("Usage: vm netdel <vboxnetX>")
     return 1
   vboxnetName = args[0]
   vboxnetDoesntExists = True
   for net in getNetList():
-    if net.name == vboxnetName:
+    if net.interfaceType == 2 and net.name == vboxnetName:    # Only for interfaceType 2 (HostOnly)
       vboxnetDoesntExists = False
       break
   if vboxnetDoesntExists:
-    print("Network '{}' doesn't exist.".format(vboxnetName))
+    print("HostOnly network '{}' doesn't exist.".format(vboxnetName))
     return 1
   progress = vbox.host.removeHostOnlyNetworkInterface(net.id)
   while not progress.completed:
@@ -886,7 +907,7 @@ def vmIp(args):
     print("MV '{}' needs to be powered off for this".format(vmName))
     return 1
 
-  if setIP(vm, ip) != 0:
+  if not setIP(vm, ip):
     print("Unable to set VM '{}' IP to '{}'".format(vmName, ip))
     return 1
   return 0
@@ -926,9 +947,6 @@ def vmMod(args):
   (vmMuta, session) = openSession(vm, const.LockType_Write)
   vmMuta.CPUCount    = cpu
   vmMuta.memorySize  = memory
-  vmMuta.RTCUseUTC   = True
-  vmMuta.BIOSSettings.IOAPICEnabled = True
-  vmMuta.BIOSSettings.bootMenuMode  = const.BIOSBootMenuMode_Disabled
   closeSession(session)
   return 0
 

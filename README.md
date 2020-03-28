@@ -11,7 +11,6 @@ There are other bits and pieces in this repo. There's an original Bash versions 
 - Document the code a little better
 - Say more about the networking of these VMs. Like other similiar utilities, it sets NIC1 as NAT type for communicating out and NIC2 as Host-Only to communicate with each other.
 - Explain that specially packaged OVAs are required. See `vm imgpack` for how to create them, etc
-- List shoulw display OS type and version
 
 ## Provissioning VMs
 The `vm prov` command provisions VMs automatically based on a simple configuration file. This is the Vagrant similarity.
