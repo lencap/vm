@@ -1115,14 +1115,15 @@ def imgList():
         if f.lower().endswith(".ova"):
             fList.append(f)
     if len(fList) < 1: return 1   # No OVA files to list, so return empty-handed
-    fmt = "{:<34}{:<54}{}"
-    print(fmt.format('NAME', 'PATH', 'SIZE'))
+    fmt = "{:<34}{:<54}{:<8}{}"
+    print(fmt.format('NAME', 'PATH', 'SIZE', 'DATE'))
     for fName in fList:
         fPath = os.path.join(vmhome, fName)
         fSize = str(os.path.getsize(fPath) >> 20) + 'MB'    # Note shift by 20 to get size in MB
+        fDate = time.strftime('%Y-%m-%d %H:%M', time.gmtime(os.path.getmtime(fPath)))
         hddFile = '<undefined>'
         if not tarfile.is_tarfile(fPath): continue          # It's named *.ova but it's not an OVA file (tar file)
-        print(fmt.format(fName, fPath, fSize))
+        print(fmt.format(fName, fPath, fSize, fDate))
     return 0
 
 
