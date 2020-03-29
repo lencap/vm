@@ -1,3 +1,4 @@
+vm.conf
 *.tar.gz
 # ============================================================================
 # ORIGINAL FOR PYTHON
@@ -151,3 +152,4 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+

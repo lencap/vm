@@ -61,8 +61,8 @@ def CreateVMConf():
     f.write("# vm.conf\n"
             "# Running 'vm prov' in a directory with this file in it will automatically\n"
             "# provision the VMs defined here. Each VM requires its own section name,\n"
-            "# which becomes the VM name. Then there are 6 other possible keys you can\n"
-            "# define. Two of which are mandatory (image and netip). The other 4 (cpus,\n"
+            "# which becomes the VM name. Then there are 7 other possible keys you can\n"
+            "# define. Two of which are mandatory (image and netip). The other 5 (cpus,\n"
             "# memory, vmcopy, vmrun, and nettype) are optional. Lines starting with a\n"
             "# hash(#) are treated as comments. Spaces can only be used within double\n"
             "# quotes (\"). vmcopy and vmrun are perfect for copying/running bootstrapping\n"
@@ -71,14 +71,14 @@ def CreateVMConf():
             "# script. You can also name this file anything you want and provision with\n"
             "# 'vm prov MYFILE'.\n\n"
             "#[dev1]\n"
-            "#image   = centos7.7.1908-vm.ova\n"
+            "#image   = centos7-1908.ova\n"
             "#netip   = 10.11.12.2\n"
             "#cpus    = 1\n"
             "#memory  = 1024\n"
             "#vmcopy  = \"./bootstrap.sh /tmp/bootstrap.sh\"\n"
             "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
             "#[dev2]\n"
-            "#image   = ubuntu1604-vm.ova\n"
+            "#image   = ubuntu1804.ova\n"
             "#netip   = 10.11.12.3\n"
             "#nettype = bri\n")
   os.chmod(vmconf, 0o644)
@@ -1032,6 +1032,11 @@ def vmProvision(args):
     else:
       vmRun = None
 
+    if 'nettype' in cfg.options(sect):       # 8 nettype
+      vmNettype = cfg.get(sect, 'nettype')
+    else:
+      vmNettype = 'ho'
+
     # Note, basic parameters updates can only be applied when the VM is powered off,
     # which is why we're doing the checks/updates here. If the VM is running and it's
     # already configured as per vmconf then we want to leave it alone
@@ -1081,6 +1086,7 @@ def vmProvision(args):
       if vm.state == const.MachineState_Running:   # Stop machine if already running
         vmStop([vmName, "f"])
       vmMod([vmName, str(vmCpus), str(vmMemory)])  # Update cpu and memory (note the string conversion)
+      netType([vmName, vmNettype])                 # Set Net Type
       setIP(vm, vmNetIp)                           # Update IP address
       ret = vmStart([vmName])                      # Start machine
       if ret != 0:
