@@ -974,19 +974,20 @@ def vmProvision(args):
               "Please work from a separate working directory.")
         return 1
 
+    print("=> Provisioning VMs defined in file {}".format(vmconf))
+
     # Parse vmconf for inconsistencies
     cfg = ConfigParser()
     cfg.read(vmconf)
     if len(cfg.sections()) < 1:
-        print("{}: No VM sections defined".format(vmconf))
+        print("=> No VM sections defined!")
         return 1
 
     # Ensure each VM section has the required minimum number of variables
     for sect in cfg.sections():
         if 'image' in cfg.options(sect) and 'netip' in cfg.options(sect):
             continue
-        print("{}: Each section needs at least these 2 variables defined: 'image' and 'netip'"
-              .format(vmconf))
+        print("=> Each section needs at least these 2 variables defined: 'image' and 'netip'!")
         return 1
 
     # Provision each VM as per its parameters defined in its vmconf section
@@ -999,17 +1000,17 @@ def vmProvision(args):
 
         vmName = sect                            # 1 name (Mandatory). Same as the section name
 
-        print("{}: VM {}: Provisioning".format(vmconf, vmName))
+        print("[{}] Provisioning this VM".format(vmName))
 
         vmImg = cfg.get(sect, 'image')           # 2 image (Mandatory)
         vmImgPath = os.path.join(vmhome, vmImg)
         if not os.path.isfile(vmImgPath):
-            print("{}: VM {}: Image '{}' doesn't exist. Please specify an available image".format(vmconf, vmName, vmImg))
+            print("[{}] Image '{}' doesn't exist. Please specify an available image".format(vmName, vmImg))
             return 1
 
         vmNetIp = cfg.get(sect, 'netip')         # 3 netip (Mandatory)
         if invalidIP(vmNetIp) or vmNetIp.endswith(".1"):
-            print("{}: VM {}: IP address '{}' is invalid".format(vmconf, vmName, vmNetIp))
+            print("[{}] IP address '{}' is invalid".format(vmName, vmNetIp))
             return 1
 
         if 'cpus' in cfg.options(sect):          # 4 cpus
@@ -1042,10 +1043,10 @@ def vmProvision(args):
         # already configured as per vmconf then we want to leave it alone
         try:
             vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-            print("{}: VM {}: This VM already exists".format(vmconf, vmName))
+            print("[{}] This VM already exists!".format(vmName))
         except:
             if vmCreate([vmName, vmImg]) != 0:
-                print("{}: VM {}: Error creating VM".format(vmconf, vmName))
+                print("[{}] Error creating this VM".format(vmName))
                 return 1
             vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
 
@@ -1059,30 +1060,30 @@ def vmProvision(args):
                 if vmTmp.name == vm.name:
                     continue   # Skip this machine itself
                 if getIP(vmTmp) == vmNetIp:
-                    print("{}: VM {}: IP '{}' is already taken by VM '{}'".format(vmconf, vmName, vmNetIp, vmTmp.name))
+                    print("[{}] IP '{}' is already taken by VM '{}'".format(vmName, vmNetIp, vmTmp.name))
                     return 1
             sameConfig = False
-            print("{}: VM {}: Setting IP address to '{}'".format(vmconf, vmName, vmNetIp))
+            print("[{}] Setting IP address to '{}'".format(vmName, vmNetIp))
 
         # CPUs
         if vm.CPUCount != int(vmCpus):
             sameConfig = False
-            print("{}: VM {}: Setting CPU count to '{}'".format(vmconf, vmName, str(vmCpus)))
+            print("[{}] Setting CPU count to '{}'".format(vmName, str(vmCpus)))
 
         # Memory
         if vm.memorySize != int(vmMemory):
             sameConfig = False
-            print("{}: VM {}: Setting memory to '{}'".format(vmconf, vmName, str(vmMemory)))
+            print("[{}] Setting memory to '{}'".format(vmName, str(vmMemory)))
 
         # Perform update if any one parameter was different
         if sameConfig:
-            print("{}: VM {}: VM is already configured as per config file".format(vmconf, vmName))
+            print("[{}] VM is already configured exactly as per given config file".format(vmName))
             if vm.state != const.MachineState_Running:   # Start machine if not already running
                 ret = vmStart([vmName])
                 if ret != 0:
-                    print("{}: VM {}: Error starting VM".format(vmconf, vmName))
+                    print("[{}] Error starting this VM".format(vmName))
         else:
-            print("{}: VM {}: Updating as per config file".format(vmconf, vmName))
+            print("[{}] Applying configurations".format(vmName))
             if vm.state == const.MachineState_Running:   # Stop machine if already running
                 vmStop([vmName, "f"])
             vmMod([vmName, str(vmCpus), str(vmMemory)])  # Update cpu and memory (note the string conversion)
@@ -1090,7 +1091,7 @@ def vmProvision(args):
             setIP(vm, vmNetIp)                           # Update IP address
             ret = vmStart([vmName])                      # Start machine
             if ret != 0:
-                print("{}: VM {}: Error starting VM".format(vmconf, vmName))
+                print("[{}] Error starting VM".format(vmName))
 
         # Run VMCOPY COMMAND
         if vmCopy:
