@@ -3,23 +3,24 @@
 # Simple Linux VM manager
 
 import os
-import sys 
-import time 
+import sys
+import time
 import shutil
 import socket
 import subprocess
 import tarfile
 import traceback
 from configparser import ConfigParser
+
 try:
-  from vboxapi import VirtualBoxManager
+    from vboxapi import VirtualBoxManager
 except ImportError:
-  print("Missing 'vboxapi' module. Is VirtualBox installed?")
-  sys.exit(1)
+    print("Missing 'vboxapi' module. Is VirtualBox installed?")
+    sys.exit(1)
 
 
 # Global variables
-prgVer    = 'v2.6.1'
+prgVer    = 'v2.6.2'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -30,1224 +31,1284 @@ vmuser    = 'vmuser'                       # Default user
 
 
 def Usage():
-  p = prgName
-  print("Simple Linux VM Manager {}\n"
-        "{} list                                   List all VMs\n"
-        "{} create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName\n"
-        "{} del       <vmName> [f]                 Delete VM. Force option\n"
-        "{} start     <vmName> [g]                 Start VM. GUI option\n"
-        "{} stop      <vmName> [f]                 Stop VM. Force option\n"
-        "{} ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
-        "{} prov      [<vmConf>|c]                 Provision VM(s) in vm.conf, or optional given file; Create skeleton file option\n"
-        "{} info      <vmName>                     Dump VM details\n"
-        "{} mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
-        "{} ip        <vmName> <ip>                Set VM IP address\n"
-        "{} imglist                                List all available images\n"
-        "{} imgcreate <imgName> <vmName>           Create imgName from existing VM\n"
-        "{} imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
-        "{} imgimp    <imgFile>                    Import image. Make available to this program\n"
-        "{} imgdel    <imgName> [f]                Delete image. Force option\n"
-        "{} netlist                                List available networks\n"
-        "{} netadd    <ip>                         Create new network\n"
-        "{} netdel    <vboxnetX>                   Delete given network"
-        .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
-  sys.exit(0)
+    p = prgName
+    print("Simple Linux VM Manager {}\n"
+          "{} list                                   List all VMs\n"
+          "{} create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName\n"
+          "{} del       <vmName> [f]                 Delete VM. Force option\n"
+          "{} start     <vmName> [g]                 Start VM. GUI option\n"
+          "{} stop      <vmName> [f]                 Stop VM. Force option\n"
+          "{} ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
+          "{} prov      [<vmConf>|c]                 Provision VM(s) in vm.conf, or optional given file; Create skeleton file option\n"
+          "{} info      <vmName>                     Dump subset of all VM details for common troubleshooting\n"
+          "{} mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
+          "{} ip        <vmName> <ip>                Set VM IP address\n"
+          "{} imglist                                List all available images\n"
+          "{} imgcreate <imgName> <vmName>           Create imgName from existing VM\n"
+          "{} imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
+          "{} imgimp    <imgFile>                    Import image. Make available to this program\n"
+          "{} imgdel    <imgName> [f]                Delete image. Force option\n"
+          "{} nettype   <vmName> <ho[bri]>           Set NIC type to Bridge as option; default is always HostOnly\n"
+          "{} netlist                                List available HostOnly networks\n"
+          "{} netadd    <ip>                         Create new HostOnly network\n"
+          "{} netdel    <vboxnetX>                   Delete given HostOnly network"
+          .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+    sys.exit(0)
 
 
 def CreateVMConf():
-  with open(vmconf, "w") as f:
-    f.write("# vm.conf\n"
-            "# Running 'vm prov' in a directory with this file in it will automatically\n"
-            "# provision the VMs defined here. Each VM requires its own section name,\n"
-            "# which becomes the VM name. Then there are 6 other possible keys you can\n"
-            "# define. Two of which are mandatory (image and netip). The other 4 (cpus,\n"
-            "# memory, vmcopy, and vmrun) are optional. Lines starting with a hash(#)\n"
-            "# are treated as comments. Spaces can only be used within double quotes (\").\n"
-            "# vmcopy and vmrun are perfect for copying/running bootstrapping scripts.\n"
-            "# Note these last 2 can only appear once a piece, as duplicate keys are not\n"
-            "# yet allowed. It is best to put everything inside just one bootstrapping\n"
-            "# script. You can also name this file anything you want and provision with\n"
-            "# 'vm prov MYFILE'.\n\n"
-            "#[dev1]\n"
-            "#image   = centos7.7.1908-vm.ova\n"
-            "#netip   = 10.11.12.2\n"
-            "#cpus    = 1\n"
-            "#memory  = 1024\n"
-            "#vmcopy  = \"./bootstrap.sh /tmp/bootstrap.sh\"\n"
-            "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
-            "#[dev2]\n"
-            "#image   = ubuntu1604-vm.ova\n"
-            "#netip   = 10.11.12.3\n")
-  os.chmod(vmconf, 0o644)
+    with open(vmconf, "w") as f:
+        f.write("# vm.conf\n"
+                "# Running 'vm prov' in a directory with this file in it will automatically\n"
+                "# provision the VMs defined here. Each VM requires its own section name,\n"
+                "# which becomes the VM name. Then there are 7 other possible keys you can\n"
+                "# define. Two of which are mandatory (image and netip). The other 5 (cpus,\n"
+                "# memory, vmcopy, vmrun, and nettype) are optional. Lines starting with a\n"
+                "# hash(#) are treated as comments. Spaces can only be used within double\n"
+                "# quotes (\"). vmcopy and vmrun are perfect for copying/running bootstrapping\n"
+                "# scripts. Note these last 2 can only appear once a piece, as duplicate keys\n"
+                "# are not yet allowed. It is best to put everything inside just one bootstrapping\n"
+                "# script. You can also name this file anything you want and provision with\n"
+                "# 'vm prov MYFILE'.\n\n"
+                "#[dev1]\n"
+                "#image   = centos7-1908.ova\n"
+                "#netip   = 10.11.12.2\n"
+                "#cpus    = 1\n"
+                "#memory  = 1024\n"
+                "#vmcopy  = \"./bootstrap.sh /tmp/bootstrap.sh\"\n"
+                "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
+                "#[dev2]\n"
+                "#image   = ubuntu1804.ova\n"
+                "#netip   = 10.11.12.3\n"
+                "#nettype = bri\n")
+    os.chmod(vmconf, 0o644)
 
 
 def CreateSSHKeys():
-  with open(vmsshpri, "w") as f:
-    f.write("-----BEGIN RSA PRIVATE KEY-----\n"
-            "MIIEoQIBAAKCAQEAyIZo/WEpMT8006pKzqHKhNEAPITJCEWjLN+cGSg9snFXVljA\n"
-            "IQ9CtLo89PJvnfGj8I9VxXPxCUmC8gew/XXxQuExa0XhSSNYDEqMyOvlB8KSoYw8\n"
-            "tFwNAYaeHw4rbygIgOSn5+g1lLXEf+FPa5JJJAByoxvqXtxZhwiJP2BOkp/ULqsy\n"
-            "1UGbHFzGsYHkD8ukYINnr8Yob5K3GuvBSZkb4o02ErC0Tj9Xi52vxgSQEKNQs5BO\n"
-            "xzb4gtJ7ozArd11xrpmel02bH7mRfrB/Gpsfvb4WXRG9Kiat09T3XjceMAlcmMUG\n"
-            "QJD0ip1mgN3elTCGpon8K5ZRWGxrF7G8XqnGQQIBIwKCAQBKexENp77XxwT+KU78\n"
-            "SrjvgNQzvEqrTRC45Vc8i0odtRHPnU6tMY3OGUnXUru+UnAXhbIkxKn8Ip5Z5ZmC\n"
-            "tsdTWvUZNzZrn2nYrfnG+IhEtfvy3FEPyms7FL5jTmfndUT8rLNkw/ak8w54pCTQ\n"
-            "LwU5Qf6xnKeCUdgcNl7dBoOViyj8eourzUCY55JMZFDF7exKA6j2FXdUsl6O8zlZ\n"
-            "immjlbO6dSkZt203jyuFlV1YNG/13EjeihmvMDugnP2CP1qr9kUpGn1NfwdCVb2/\n"
-            "AJz+g8gvZflOIzYaEiaodEMJsGNA2sXuygOVSZy4ryc3iFezA4Bvk/3bLweNqlvj\n"
-            "yVSLAoGBAP7tjUErm9ciDzLnXe6+toV2E1e1D/a/z2t/GxbbxPYklAUeWaPLhcsZ\n"
-            "9B7aUx7BGeB+lPI5sP//hc8ouFTTgE3Y9nsgOjEY7HFIDSG1xrN+MnuY+ztNeDif\n"
-            "Jfs44vMdP32pAwJqgtKtg1KiILqx81XeMYhBynpwooISJTioW5FRAoGBAMleSirb\n"
-            "GrOZtrsj2s0Uz6LAtPpQfGaQp/5CVYYt/QlUUnR0fhgCaT8DduCrbhOJcmoo5V1K\n"
-            "EimEQPhAM6JFMpIuDBp+kQT7FKo1Rl6J+igId5N/jc72nm1kpYBfzGLlAqxU13jJ\n"
-            "ULXBU+QU5ZLrRESrTwZun9ytXvwR/O7HMCnxAoGBAPek755k4IfX8YHoEhsfqf39\n"
-            "rGPUdehijvq1/Q7kHmtz/YFQrtmhIuKOPZpQbgCeU6bhXX2XIPivFEWVRVm3g/Pa\n"
-            "FAKUVclLaVgaG2KTU09HZD2NS9M1UDcBAFMhUX50LwxbCjzcfxXNIHwod5DKH5U+\n"
-            "Pr7g01JeycAu4lRLxqprAoGASstAHovlWKbO18t9J5oD+p9ZKcYfk89UVx/z4WGJ\n"
-            "3uTOK0E2JizIAXZQudlGJIOCRLAarZ8rUT/AXDUafhmzsqNjlM/suLUHrO83ZPFr\n"
-            "izZYTLpZPj5YGgDPwfeyUJ40MWFXWL/NhVZvndvgPeJbL3LUNZbNqby84UiChJMg\n"
-            "hJsCgYA5KiUh42OZgHjez5SGvDBoBaOPwutk5O5ufESfgpzh3W0r6iA/dy+HesYV\n"
-            "7YDhwSXl7zQgWHKb76SE1/fQcBYOd4TcKzbq4IDU1+oibcOXRMOGkg6vdsXhAvdU\n"
-            "ADiALhM7Gqxc0eIMPSw4REhLiS2XNlTSL8fxPHMVJSIuPn+SXw==\n"
-            "-----END RSA PRIVATE KEY-----\n")
-  os.chmod(vmsshpri, 0o600)
-  subprocess.call("ssh-keygen -f {} -y > {}".format(vmsshpri,vmsshpub), shell=True)
+    with open(vmsshpri, "w") as f:
+        f.write("-----BEGIN RSA PRIVATE KEY-----\n"
+                "MIIEoQIBAAKCAQEAyIZo/WEpMT8006pKzqHKhNEAPITJCEWjLN+cGSg9snFXVljA\n"
+                "IQ9CtLo89PJvnfGj8I9VxXPxCUmC8gew/XXxQuExa0XhSSNYDEqMyOvlB8KSoYw8\n"
+                "tFwNAYaeHw4rbygIgOSn5+g1lLXEf+FPa5JJJAByoxvqXtxZhwiJP2BOkp/ULqsy\n"
+                "1UGbHFzGsYHkD8ukYINnr8Yob5K3GuvBSZkb4o02ErC0Tj9Xi52vxgSQEKNQs5BO\n"
+                "xzb4gtJ7ozArd11xrpmel02bH7mRfrB/Gpsfvb4WXRG9Kiat09T3XjceMAlcmMUG\n"
+                "QJD0ip1mgN3elTCGpon8K5ZRWGxrF7G8XqnGQQIBIwKCAQBKexENp77XxwT+KU78\n"
+                "SrjvgNQzvEqrTRC45Vc8i0odtRHPnU6tMY3OGUnXUru+UnAXhbIkxKn8Ip5Z5ZmC\n"
+                "tsdTWvUZNzZrn2nYrfnG+IhEtfvy3FEPyms7FL5jTmfndUT8rLNkw/ak8w54pCTQ\n"
+                "LwU5Qf6xnKeCUdgcNl7dBoOViyj8eourzUCY55JMZFDF7exKA6j2FXdUsl6O8zlZ\n"
+                "immjlbO6dSkZt203jyuFlV1YNG/13EjeihmvMDugnP2CP1qr9kUpGn1NfwdCVb2/\n"
+                "AJz+g8gvZflOIzYaEiaodEMJsGNA2sXuygOVSZy4ryc3iFezA4Bvk/3bLweNqlvj\n"
+                "yVSLAoGBAP7tjUErm9ciDzLnXe6+toV2E1e1D/a/z2t/GxbbxPYklAUeWaPLhcsZ\n"
+                "9B7aUx7BGeB+lPI5sP//hc8ouFTTgE3Y9nsgOjEY7HFIDSG1xrN+MnuY+ztNeDif\n"
+                "Jfs44vMdP32pAwJqgtKtg1KiILqx81XeMYhBynpwooISJTioW5FRAoGBAMleSirb\n"
+                "GrOZtrsj2s0Uz6LAtPpQfGaQp/5CVYYt/QlUUnR0fhgCaT8DduCrbhOJcmoo5V1K\n"
+                "EimEQPhAM6JFMpIuDBp+kQT7FKo1Rl6J+igId5N/jc72nm1kpYBfzGLlAqxU13jJ\n"
+                "ULXBU+QU5ZLrRESrTwZun9ytXvwR/O7HMCnxAoGBAPek755k4IfX8YHoEhsfqf39\n"
+                "rGPUdehijvq1/Q7kHmtz/YFQrtmhIuKOPZpQbgCeU6bhXX2XIPivFEWVRVm3g/Pa\n"
+                "FAKUVclLaVgaG2KTU09HZD2NS9M1UDcBAFMhUX50LwxbCjzcfxXNIHwod5DKH5U+\n"
+                "Pr7g01JeycAu4lRLxqprAoGASstAHovlWKbO18t9J5oD+p9ZKcYfk89UVx/z4WGJ\n"
+                "3uTOK0E2JizIAXZQudlGJIOCRLAarZ8rUT/AXDUafhmzsqNjlM/suLUHrO83ZPFr\n"
+                "izZYTLpZPj5YGgDPwfeyUJ40MWFXWL/NhVZvndvgPeJbL3LUNZbNqby84UiChJMg\n"
+                "hJsCgYA5KiUh42OZgHjez5SGvDBoBaOPwutk5O5ufESfgpzh3W0r6iA/dy+HesYV\n"
+                "7YDhwSXl7zQgWHKb76SE1/fQcBYOd4TcKzbq4IDU1+oibcOXRMOGkg6vdsXhAvdU\n"
+                "ADiALhM7Gqxc0eIMPSw4REhLiS2XNlTSL8fxPHMVJSIuPn+SXw==\n"
+                "-----END RSA PRIVATE KEY-----\n")
+    os.chmod(vmsshpri, 0o600)
+    subprocess.call("ssh-keygen -f {} -y > {}".format(vmsshpri,vmsshpub), shell=True)
 
 
 def enumElem(enumerate, element):
-  all = const.all_values(enumerate)     # Global variable
-  for key in all.keys():
-    if str(element) == str(all[key]):
-      return key
-  return "<unknown>"
+    all = const.all_values(enumerate)     # Global variable
+    for key in all.keys():
+        if str(element) == str(all[key]):
+            return key
+    return "<unknown>"
 
 
 def openSession(vm, lockType):
-  # Give last session 5 sec to close
-  timeOut = time.time() + 5
-  while timeOut > time.time() and vm.sessionState != const.SessionState_Unlocked:   
-    time.sleep(0.01)
-  session = vboxmgr.getSessionObject(vbox)    # Get ISession objects
-  vm.lockMachine(session, lockType)
-  # LockType_Null=0   LockType_Shared=1   LockType_Write=2  LockType_VM=3
-  return session.machine, session             # Return mutable IMachine and ISession objects
+    # Give last session 5 sec to close
+    timeOut = time.time() + 5
+    while timeOut > time.time() and vm.sessionState != const.SessionState_Unlocked:
+        time.sleep(0.01)
+    session = vboxmgr.getSessionObject(vbox)    # Get ISession objects
+    vm.lockMachine(session, lockType)
+    # LockType_Null=0   LockType_Shared=1   LockType_Write=2  LockType_VM=3
+    return session.machine, session             # Return mutable IMachine and ISession objects
 
 
 def closeSession(session):
-  session.machine.saveSettings()  # Save all settings and unlock session
-  session.unlockMachine()
-  return 0
+    session.machine.saveSettings()  # Save all settings and unlock session
+    session.unlockMachine()
+    return 0
+
+
+def getNetType(vm):
+    netType = vm.getGuestPropertyValue('/vm/nettype')  # Try official store location for this program
+    if netType == '' or netType == None:
+        netType  = 'ho'                                  # Default to it being HostOnly
+    return netType
 
 
 def getIP(vm):
-  ip = vm.getGuestPropertyValue('/vm/ip')   # Try official store location for this program
-  if ip == '' or ip == None:
-    ip  = '<undefined>'                     # Default to it being undefined 
-  return ip
+    ip = vm.getGuestPropertyValue('/vm/ip')   # Try official store location for this program
+    if ip == '' or ip == None:
+        ip  = '<undefined>'                     # Default to it being undefined
+    return ip
 
 
 def usedIP(ip):
-  for vm in vbox.getMachines():
-    if getIP(vm) == ip:
-      return True
-  return False
+    # Check if IP is defined as belonging to an existing VM
+    for vm in vbox.getMachines():
+        if getIP(vm) == ip:
+            return True
+
+    # Check if IP is active
+    # Send 1 packet and wait 300 milliseconds for a reply
+    # A non-zero value return means the IP is NOT alive, and probably not used
+    IPNotInUse = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
+    if IPNotInUse:
+        return False
+    return False
 
 
 def nextUniqueIP(ip):
-  while usedIP(ip):
-    ipNet = '.'.join(ip.split('.')[:3])     # Network address
-    ip4th = str(int(ip.split('.')[3]) + 1)  # Add one to 4th octect
-    ip = ipNet + '.' + ip4th
-    if int(ip4th) > 254:                    # If it's greater than 254 restart at 2
-      ip = ipNet + '.' + str(int(2))        # Add one to 4th octect
-  return ip
+    while usedIP(ip):
+        ipNet = '.'.join(ip.split('.')[:3])     # Network address
+        ip4th = str(int(ip.split('.')[3]) + 1)  # Add one to 4th octect
+        ip = ipNet + '.' + ip4th
+        if int(ip4th) > 254:                    # If it's greater than 254 restart at 2
+            ip = ipNet + '.' + str(int(2))        # Add one to 4th octect
+    return ip
 
 
 def invalidIP(ip):
-  octects = ip.split('.')
-  if len(octects) != 4: return True
-  for x in octects:
-    if not x.isdigit(): return True
-    if int(x) > 255: return True
-  return False
+    octects = ip.split('.')
+    if len(octects) != 4: return True
+    for x in octects:
+        if not x.isdigit(): return True
+        if int(x) > 255: return True
+    return False
 
 
 def setIP(vm, ip):
-  # Store IP in official location and setup net devices. Note that like Vagrant
-  # and other similar utilities, the network configuration is 2 interfaces:
-  #   enp0s3 w/ NAT networking       =  to access external world
-  #   enp0s8 w/ HostOnly networking  =  for intra-network connectivity
+    # Set up network devices and store IP in official location
+    if invalidIP(ip):
+        print("IP address '{}' is invalid".format(ip))
+        return False
 
-  if invalidIP(ip):
-    print("IP address '{}' is invalid".format(ip))
-    return 1
-  if ip.split('.')[3] == '1':
-    print("IP ending in .1 is reserved for the vboxnet gateway itself")
-    return 1
-  for vmTmp in vbox.getMachines():
-    if vmTmp.name == vm.name:
-      continue   # Skip this machine itself
-    if getIP(vmTmp) == ip:
-      print("Error: IP '{}' is already taken by VM '{}'".format(ip, vmTmp.name))
-      return 1
-  ipNet = '.'.join(ip.split('.')[:3])  # Derive IP's network address (the first 3 octects)
-  # If given IP address fits into an existing vboxnet network, then
-  # put it in that vboxnet, else create a new vboxnet
-  newHOName = newHOIP = None
-  for tmpHO in getNetList():
-    if ipNet == '.'.join(tmpHO.IPAddress.split('.')[:3]):  # vboxnet network exists so lets use it
-      newHOName = tmpHO.name
-      break
-  if newHOName == None:  # If not assigned by above loop, it means we have to create new vboxnet
-    newHOName = netAdd([ipNet + '.1'])
-  (vmMuta, session) = openSession(vm, const.LockType_Write)
-  # Set enp0s3 as NAT for routing external traffic, and no SSH port forwarding
-  nic0 = vmMuta.getNetworkAdapter(0)
-  nic0.enabled           = True
-  nic0.attachmentType    = const.all_values("NetworkAttachmentType")["NAT"] 
-  nic0.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
-  nic0.bridgedInterface  = None
-  nic0.hostOnlyInterface = None
-  nic0.NATEngine.DNSPassDomain = True
-  nic0.NATEngine.DNSUseHostResolver = True
-  for pfRule in nic0.NATEngine.getRedirects():
-    # Remove ssh-port forwarding rule if it exists
-    if pfRule.split(",")[0] == "ssh":
-      nic0.NATEngine.removeRedirect("ssh")
-  # Set enp0s8 as HostOnly, and as the primary interface
-  nic1 = vmMuta.getNetworkAdapter(1)
-  nic1.enabled           = True
-  nic1.attachmentType    = const.all_values("NetworkAttachmentType")["HostOnly"] 
-  nic1.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
-  nic1.bridgedInterface  = None
-  nic1.hostOnlyInterface = newHOName
+    for vmTmp in vbox.getMachines():
+        if vmTmp.name == vm.name:
+            continue   # Skip this machine itself
+        if getIP(vmTmp) == ip:
+            print("Error: IP '{}' is already taken by VM '{}'".format(ip, vmTmp.name))
+            return False
 
-  # Store official IP address for this VM in its /vm/* Guest Additions property area
-  vmMuta.setGuestPropertyValue("/vm/name", vmMuta.name)
-  vmMuta.setGuestPropertyValue("/vm/ip", ip)
-  vmMuta.setGuestPropertyValue("/vm/netmask",   "255.255.255.0")
-  vmMuta.setGuestPropertyValue("/vm/broadcast", ".".join(ip.split(".")[:3]) + ".255")
-  closeSession(session)
-  return 0
+    if ip.split('.')[3] == '1':
+        print("IP ending in .1 is reserved for the vboxnet gateway itself")
+        return False
+
+    (vmMuta, session) = openSession(vm, const.LockType_Write)  # Get read/write handle on VM object
+
+    netType = getNetType(vm)
+    if netType == 'bri':
+        # If netType = Bridged
+        # DISABLE enp0s3 w/ Null               =  No networking
+        nic0 = vmMuta.getNetworkAdapter(0)
+        nic0.enabled = False
+        # ENABLE enp0s8 w/ Bridge networking   =  Real-world networking (assumes local admin access)
+        nic1 = vmMuta.getNetworkAdapter(1)
+        nic1.enabled          = True
+        nic1.adapterType      = const.all_values("NetworkAdapterType")['Virtio']
+        nic1.attachmentType   = const.all_values("NetworkAttachmentType")["Bridged"]
+        nic1.bridgedInterface = getMainNIC()   # Find and use host's main NIC to bridge to
+    else:
+        # For netType = HostOnly
+        #   ENABLE enp0s3 w/ NAT networking       =  to access external world
+        #   ENABLE enp0s8 w/ HostOnly networking  =  for intra-network connectivity
+        ipNet = '.'.join(ip.split('.')[:3])  # Get assumed /24 network address (first 3 octects)
+        # If given IP address fits into an existing vboxnet network, then
+        # put it in that vboxnet, else create a new vboxnet
+        newHOName = newHOIP = None
+        for tmpHO in getNetList():
+            # Use existing HostOnly vboxnet network if it exists
+            if tmpHO.interfaceType == 2 and ipNet == '.'.join(tmpHO.IPAddress.split('.')[:3]):
+                newHOName = tmpHO.name
+                break
+        if newHOName == None:  # If not assigned by above loop, it means we have to create new vboxnet
+            newHOName = netAdd([ipNet + '.1'])
+
+        # Enable enp0s3 as NAT for routing external traffic, and no SSH port forwarding
+        nic0 = vmMuta.getNetworkAdapter(0)
+        nic0.enabled           = True
+        nic0.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
+        nic0.attachmentType    = const.all_values("NetworkAttachmentType")["NAT"]
+        nic0.NATEngine.DNSPassDomain = True
+        nic0.NATEngine.DNSUseHostResolver = True
+        for pfRule in nic0.NATEngine.getRedirects():
+            # Remove ssh-port forwarding rule if it exists
+            if pfRule.split(",")[0] == "ssh":
+                nic0.NATEngine.removeRedirect("ssh")
+
+        # Enable enp0s8 as HostOnly, and as the primary interface
+        nic1 = vmMuta.getNetworkAdapter(1)
+        nic1.enabled           = True
+        nic1.adapterType       = const.all_values("NetworkAdapterType")['Virtio']
+        nic1.attachmentType    = const.all_values("NetworkAttachmentType")["HostOnly"]
+        nic1.hostOnlyInterface = newHOName
+
+    # Store official IP address for this VM in its /vm/* Guest Additions property area
+    vmMuta.setGuestPropertyValue("/vm/name", vmMuta.name)
+    vmMuta.setGuestPropertyValue("/vm/nettype", netType)
+    vmMuta.setGuestPropertyValue("/vm/ip", ip)
+    vmMuta.setGuestPropertyValue("/vm/netmask",   "255.255.255.0")
+    vmMuta.setGuestPropertyValue("/vm/broadcast", ".".join(ip.split(".")[:3]) + ".255")
+    closeSession(session)
+    return True
 
 
 def vmList():
-  if len(vbox.getMachines()) == 0:
-    return
-  fmt = "{:34}{:<5}{:<7}{:<12}{}"
-  print(fmt.format('NAME', 'CPU', 'MEM', 'STATE', 'SSH'))
-  for vm in vbox.getMachines():
-    state = enumElem("MachineState", vm.state)
-    ip = getIP(vm)
-    sshConn = vmuser + "@" + ip   # vmuser is global
-    if len(vm.name) > 34:
-      name = name[:30] + '...'
-    else:
-      name = vm.name
-    print(fmt.format(name, vm.CPUCount, vm.memorySize, state, sshConn))
+    if len(vbox.getMachines()) == 0:
+        return
+    fmt = "{:34}{:<12}{:<5}{:<7}{:<12}{}"
+    print(fmt.format('NAME', 'OS', 'CPU', 'MEM', 'STATE', 'SSH'))
+    for vm in vbox.getMachines():
+        state = enumElem("MachineState", vm.state)
+        ip = getIP(vm)
+        sshConn = vmuser + "@" + ip   # vmuser is global
+        if len(vm.name) > 34:
+            name = name[:30] + '...'
+        else:
+            name = vm.name
+        print(fmt.format(name, vm.OSTypeId, vm.CPUCount, vm.memorySize, state, sshConn))
 
 
 def vmCreate(args):
-  if len(args) < 2 or len(args) > 2:
-    print("Usage: vm create <vmName> <[ovaFile|imgName]>")
-    return 1
-  (vmName, imgName) = args
+    if len(args) < 2 or len(args) > 2:
+        print("Usage: vm create <vmName> <[ovaFile|imgName]>")
+        return 1
+    (vmName, imgName) = args
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-    print("VM '{}' already exist".format(vmName))
-    return 1
-  except:
-    pass   # ... let' continue creating VM
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+        print("VM '{}' already exist".format(vmName))
+        return 1
+    except:
+        pass   # ... let' continue creating VM
 
-  imgFile       = imgName                        # To see if it's a file (hopefully OVA)
-  existingImage = os.path.join(vmhome, imgName)  # To see if it's an existing image
-  if os.path.isfile(imgFile):
-    imgFile = os.path.abspath(imgFile)           # It's a file
-  elif os.path.isfile(existingImage):
-    imgFile = os.path.abspath(existingImage)     # It's one of our images
-  else:
-    print("'{}' is neither an OVA file, nor an existing image".format(imgName))
-    return 1
+    imgFile       = imgName                        # To see if it's a file (hopefully OVA)
+    existingImage = os.path.join(vmhome, imgName)  # To see if it's an existing image
+    if os.path.isfile(imgFile):
+        imgFile = os.path.abspath(imgFile)           # It's a file
+    elif os.path.isfile(existingImage):
+        imgFile = os.path.abspath(existingImage)     # It's one of our images
+    else:
+        print("'{}' is neither an OVA file, nor an existing image".format(imgName))
+        return 1
 
-  # Inspect OVA before importing into this new VM we're creating from it
-  appliance = vbox.createAppliance()   # Create empty IAppliance object
-  appliance.read(imgFile)              # Read OVA file into this IAppliance object
-  appliance.interpret()                # Populate virtualSystemDescriptions object
-  warnings = appliance.getWarnings()   # Check for warnings during OVA interpretation
-  if warnings:
-    print("OVA interpretation warnings: {}".format(warnings))
-  sysDesc = appliance.getVirtualSystemDescriptions()  # Get IVirtualSystemDescription object
-  if len(sysDesc) != 1:
-    print("Fatal: There are 0 or more than 1 VM described in this OVA. Unsupported.")
-    return 1
+    # Inspect OVA before importing into this new VM we're creating from it
+    appliance = vbox.createAppliance()   # Create empty IAppliance object
+    appliance.read(imgFile)              # Read OVA file into this IAppliance object
+    appliance.interpret()                # Populate virtualSystemDescriptions object
+    warnings = appliance.getWarnings()   # Check for warnings during OVA interpretation
+    if warnings:
+        print("OVA interpretation warnings: {}".format(warnings))
+    sysDesc = appliance.getVirtualSystemDescriptions()  # Get IVirtualSystemDescription object
+    if len(sysDesc) != 1:
+        print("Fatal: There are 0 or more than 1 VM described in this OVA. Unsupported.")
+        return 1
 
-  # getDescription returns a list data structure of 5 other lists, which we'll call descList
-  descList = sysDesc[0].getDescription() # Get descriptions for the only VM we expect in the OVA
-  dCount = sysDesc[0].count              # Get the number of descriptions
-  types = descList[0]                    # 1st list holds all the VirtualSystemDescriptionType
-          # Ignore                 01  OS                     02  Name                   03
-          # Product                04  Vendor                 05  Version                06
-          # ProductUrl             07  VendorUrl              08  Description            09
-          # License                10  Miscellaneous          11  CPU                    12
-          # Memory                 13  HardDiskControllerIDE  14  HardDiskControllerSATA 15
-          # HardDiskControllerSCSI 16  HardDiskControllerSAS  17  HardDiskImage          18
-          # Floppy                 19  CDROM                  20  NetworkAdapter         21
-          # USBController          22  SoundCard              23  SettingsFile           24
-  refs = descList[1]               # 2nd list is 'refs' use by some descriptions
-  OVFValues = descList[2]          # 3rd list is original 'OVFValues' saved in the OVF
-  VBoxValues = descList[3]         # 4th list is 'VBoxValues' suggestions for new VMs to be created with this OVF
-  extraConfigValues = descList[4]  # 5th list is 'extraConfigValues' for additional configs for each entry
+    # getDescription returns a list data structure of 5 other lists, which we'll call descList
+    descList = sysDesc[0].getDescription() # Get descriptions for the only VM we expect in the OVA
+    dCount = sysDesc[0].count              # Get the number of descriptions
+    types = descList[0]                    # 1st list holds all the VirtualSystemDescriptionType
+            # 01 = Ignore                  02 = OS                     03 = Name
+            # 04 = Product                 05 = Vendor                 06 = Version
+            # 07 = ProductUrl              08 = VendorUrl              09 = Description
+            # 10 = License                 11 = Miscellaneous          12 = CPU
+            # 13 = Memory                  14 = HardDiskControllerIDE  15 = HardDiskControllerSATA
+            # 16 = HardDiskControllerSCSI  17 = HardDiskControllerSAS  18 = HardDiskImage
+            # 19 = Floppy                  20 = CDROM                  21 = NetworkAdapter
+            # 22 = USBController           23 = SoundCard              24 = SettingsFile
+    refs = descList[1]               # 2nd list is 'refs' use by some descriptions
+    OVFValues = descList[2]          # 3rd list is original 'OVFValues' saved in the OVF
+    VBoxValues = descList[3]         # 4th list is 'VBoxValues' suggestions for new VMs to be created with this OVF
+    extraConfigValues = descList[4]  # 5th list is 'extraConfigValues' for additional configs for each entry
+    enableValue = [True] * (dCount)  # Create/init boolean list assuming all items will remain enabled
 
-  # Note: The index in each list corresponds to values for that specific description. so
-  # For instance if types[2] = 3, the Name of the machine, then actual name is stored in
-  # VBoxValues[2]. The most important value for each description is whether or not it is
-  # enabled, which is held in list enableValue[]
+    # Note: The index in each list corresponds to values for that specific description. so
+    # For instance if types[2] = 3, the Name of the machine, then actual name is stored in
+    # VBoxValues[2]. The most important value for each description is whether or not it is
+    # enabled, which is held in list enableValue[]
 
-  # Now let's import all resources defined in the OVA, but disable USB and Sound Card.
-  # Always create VM with: 1 HDD, 1 cpu, 1GB RAM, and NAT+HostOnly networking
+    # Now let's import all resources defined in the OVA
+    # Always create VM with: 1 HDD, 1 cpu, 1GB RAM, and 2 NICS (NAT & HostOnly)
 
-  enableValue = [True] * (dCount) # Create/init boolean list assuming all items will remain enabled
+    for i in range(dCount):
+        if types[i] in [14, 16, 17, 19, 20, 22, 23]:
+            # Disable USB(22), Sound Card (23), and other virtual hardware that are not really used/needed
+            enableValue[i] = False
+            continue
 
-  for i in range(dCount):
-    if types[i] in [14, 16, 17, 19, 20, 22, 23]:  # Disable unused virtual hardware
-      enableValue[i] = False
-      continue
+        if types[i] == 3:          # Set VM Name
+            VBoxValues[i] = vmName
+            continue
 
-    if types[i] == 3:          # Set VM Name
-      VBoxValues[i] = vmName
-      continue
+        if types[i] == 12:         # Set CPU numbers (string value)
+            VBoxValues[i] = '1'
+            continue
 
-    if types[i] == 12:         # Set CPU numbers (string value)
-      VBoxValues[i] = '1'
-      continue
+        if types[i] == 13:         # Set Memory amount (string value)
+            VBoxValues[i] = '1024'
+            continue
 
-    if types[i] == 13:         # Set Memory amount (string value)
-      VBoxValues[i] = '1024'
-      continue
+        if types[i] == 18:         # Set HardDiskImage path, and corresponding extraConfig
+            VBoxValues[i] = os.path.join(vbhome, vmName, 'hd1.vmdk')
+            extraConfigValues[i] = "controller=6;channel=0"
+            continue
 
-    if types[i] == 18:         # Set HardDiskImage path, and corresponding extraConfig
-      VBoxValues[i] = os.path.join(vbhome, vmName, 'hd1.vmdk')
-      extraConfigValues[i] = "controller=6;channel=0"
-      continue
+        if types[i] == 21:         # Set NetworkAdapter in slot 1 to NAT
+            VBoxValues[i] = "6"
+            extraConfigValues[i] = "slot=0;type=NAT"
 
-    if types[i] == 21:         # Set NetworkAdapter in slot 1 to NAT
-      VBoxValues[i] = "6"
-      extraConfigValues[i] = "slot=0;type=NAT"
+    # Update the values for this machine we're creating
+    sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
 
-  # Update the values for this machine we're creating
-  sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
+    importOptions = []  # Empty list means new MAC addresses will be generated, while [1, 2] means
+                        # don't generate new MAC addresses for regular (1) and NAT(2) interfaces
 
-  importOptions = []  # Empty means new MAC addresses will be generated, while [1, 2] means
-                      # don't generate new MAC addresses for regular (1) and NAT(2) interfaces
-  
-  # Import the appliance, creating the VM, and dot the progress while we wait
-  progress = appliance.importMachines(importOptions)
-  while not progress.completed:
-    time.sleep(0.2)
+    # Import the appliance, create the VM, and wait till it's complete
+    progress = appliance.importMachines(importOptions)
+    while not progress.completed:
+        time.sleep(0.2)
 
-  # Machine was created successfully if we can get its IMachine object
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("Error creating VM")
-    return 1
+    # Machine was created successfully if we can get its IMachine object
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("Error creating VM")
+        return 1
 
-  # Get a write lock session on the VM and ensure disk1 is the only bootable device, and
-  # Also enable RTC/UTC, I/O APIC, and disable BIOS boot menu
-  (vmMuta, session) = openSession(vm, const.LockType_Write)
-  vmMuta.setBootOrder(1, const.DeviceType_HardDisk)
-  vmMuta.RTCUseUTC   = True
-  vmMuta.BIOSSettings.IOAPICEnabled = True
-  vmMuta.BIOSSettings.bootMenuMode  = const.BIOSBootMenuMode_Disabled
-  closeSession(session)  # Close write session
+    # Get a write lock session on the VM and ensure disk1 is the only bootable device
+    (vmMuta, session) = openSession(vm, const.LockType_Write)
+    vmMuta.setBootOrder(1, const.DeviceType_HardDisk)
+    closeSession(session)  # Close write session
 
-  # Let's make sure this VM gets a proper IP address
-  ip = getIP(vm)                    # Get officially defined IP
-  if invalidIP(ip) or usedIP(ip):   # Ensure we have a good IP address
-    ip = vmdefip                    # Use global default IP if necessary
-    if usedIP(ip):                  # Call nextUniqueIP if global default is already taken
-      ip = nextUniqueIP(ip)
-  setIP(vm, ip)
-  # We're trusting setIP won't failed after so many checks 
-  return 0
+    # Let's make sure this VM gets a proper IP address
+    ip = getIP(vm)                    # Get officially defined IP
+    if invalidIP(ip) or usedIP(ip):   # Ensure we have a good IP address
+        ip = vmdefip                    # Use global default IP if necessary
+        if usedIP(ip):                  # Call nextUniqueIP if global default is already taken
+            ip = nextUniqueIP(ip)
+    setIP(vm, ip)
+    return 0
 
 
 def vmStart(args):
-  vmName = option = None
-  if len(args) == 2:
-    (vmName, option) = args
-  elif len(args) == 1:
-    vmName = args[0]
-    option = 'headless'
-  else:
-    print("Usage: vm start <vmName> [g]")
-    return 1
-  if option == 'g':
-    option = 'gui'
-  else:
-    option = 'headless'
+    vmName = option = None
+    if len(args) == 2:
+        (vmName, option) = args
+    elif len(args) == 1:
+        vmName = args[0]
+        option = 'headless'
+    else:
+        print("Usage: vm start <vmName> [g]")
+        return 1
+    if option == 'g':
+        option = 'gui'
+    else:
+        option = 'headless'
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
 
-  if vm.state == const.MachineState_Running:   
-    print("VM '{}' is already running".format(vmName))
-    return 1
+    if vm.state == const.MachineState_Running:
+        print("VM '{}' is already running".format(vmName))
+        return 1
 
-  # Don't start VM unless IP is defined and is valid
-  ipAddr = getIP(vm)             # Get officially defined IP
-  if ipAddr == '<undefined>':
-    print("IP address is '<undefined>'")
-    return 1
-  if invalidIP(ipAddr):
-    print("IP address '{}' is invalid.".format(ipAddr))
-    return 1
-  ret = setIP(vm, ipAddr)    # Store IP in official location and setup net devices
-  if ret != 0:               # Don't start if we couldn't set IP address
-    return 1
+    # Don't start VM unless IP is defined and is valid
+    ipAddr = getIP(vm)             # Get officially defined IP
+    if ipAddr == '<undefined>':
+        print("IP address is '<undefined>'")
+        return 1
+    if invalidIP(ipAddr):
+        print("IP address '{}' is invalid.".format(ipAddr))
+        return 1
+    if not setIP(vm, ipAddr):    # Store IP in official location and setup net devices
+        return 1                   # Don't start if we couldn't set IP address
 
-  # Launch VM process
-  session = vboxmgr.getSessionObject(vbox)    # Get ISession object
-  feType  = option                            # Front-end Type [gui, headless, sdl, '']
-  envStr  = ''                                # Environment string
-  progress = vm.launchVMProcess(session, feType, envStr) # Launch VM process
-  while not progress.completed:               # Wait for launch process to start
-    time.sleep(0.01)
-  session.unlockMachine()                     # Now we can unlock this session object
-  # Note, at this point the VM is still booting up
+    # Launch VM process
+    session = vboxmgr.getSessionObject(vbox)    # Get ISession object
+    feType  = option                            # Front-end Type [gui, headless, sdl, '']
+    envStr  = ''                                # Environment string
+    progress = vm.launchVMProcess(session, feType, envStr) # Launch VM process
+    while not progress.completed:               # Wait for launch process to start
+        time.sleep(0.01)
+    session.unlockMachine()                     # Now we can unlock this session object
+    # Note, at this point the VM is still booting up
 
-  # Give it no more than 5 sec before erroring out if VM process has no 'Running' status 
-  timeOut = time.time() + 5
-  while timeOut > time.time() and vm.state != const.MachineState_Running:   
-    time.sleep(0.1)
-  if vm.state != const.MachineState_Running:   
-    print("Error starting VM")
-    return 1
-  return 0
+    # Give it no more than 5 sec before erroring out if VM process has no 'Running' status
+    timeOut = time.time() + 5
+    while timeOut > time.time() and vm.state != const.MachineState_Running:
+        time.sleep(0.1)
+    if vm.state != const.MachineState_Running:
+        print("Error starting VM")
+        return 1
+    return 0
 
 
 def vmStop(args):
-  vmName = option = None
-  if len(args) == 2:
-    (vmName, option) = args
-  elif len(args) == 1:
-    vmName = args[0]
-  else:
-    print("Usage: vm stop <vmName> [f]")
-    return 1
-  if option != "f": option = "normal"
+    vmName = option = None
+    if len(args) == 2:
+        (vmName, option) = args
+    elif len(args) == 1:
+        vmName = args[0]
+    else:
+        print("Usage: vm stop <vmName> [f]")
+        return 1
+    if option != "f": option = "normal"
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
-
-  if vm.state == const.MachineState_Aborted:
-    print("'Aborted' state is synonymous with 'PoweredOff' state")
-    return 1
-
-  if vm.state != const.MachineState_Running:   
-    print("VM '{}' is not running".format(vmName))
-    return 1
-
-  if option == "normal": 
-    msg = "Stop VM '{}'? y/n ".format(vmName)
-    response = raw_input(msg)
-    if response != "y":
-      return 1
-
-  # Try running poweroff command from within the VM (most graceful method)
-  if vm.state == const.MachineState_Running:
-    vmSSH([vmName, '/usr/sbin/poweroff'], False)
-    # Give this method no more than 3 sec to finish  
-    timeOut = time.time() + 3
-    while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:   
-      time.sleep(0.1)
-
-  # Try normal powerDown API call
-  downable = [const.MachineState_Running, const.MachineState_Paused, const.MachineState_Stuck]
-  if vm.state in downable and vm.state != const.MachineState_PoweredOff:
     try:
-      (dummy1, session) = openSession(vm, const.LockType_Shared)
-      session.console.powerDown()
-      # Give this method no more than 3 sec to finish  
-      timeOut = time.time() + 3
-      while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:   
-        time.sleep(0.1)
-      closeSession(session)
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
     except:
-      dummy1 = True  # Dummy code. Try another method below
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
 
-  # Try power button API call
-  if vm.state != const.MachineState_PoweredOff:   
-    try:
-      (dummy1, session) = openSession(vm, const.LockType_Shared)
-      session.console.powerButton()
-      # Give this method no more than 3 sec to finish  
-      timeOut = time.time() + 3
-      while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:   
-        time.sleep(0.1)
-      closeSession(session)
-    except:
-      dummy1 = True  # Dummy code. Try another method below
+    if vm.state == const.MachineState_Aborted:
+        print("'Aborted' state is synonymous with 'PoweredOff' state")
+        return 1
 
-  # Finally just kill the OS processes. Caveat: leaves VM in Aborted state
-  if vm.state != const.MachineState_PoweredOff:
-    killVM = "kill -9 `ps auxwww | grep \"VBoxHeadles[s] --comment {}" \
-             " --startvm\" | awk '{print $2}'` > /dev/null 2>&1".format(vmName)
-    subprocess.call(killVM, shell=True)
-  return 0
+    if vm.state != const.MachineState_Running:
+        print("VM '{}' is not running".format(vmName))
+        return 1
+
+    if option == "normal":
+        msg = "Stop VM '{}'? y/n ".format(vmName)
+        response = raw_input(msg)
+        if response != "y":
+            return 1
+
+    # Try running poweroff command from within the VM (most graceful method)
+    if vm.state == const.MachineState_Running:
+        vmSSH([vmName, '/usr/sbin/poweroff'], False)
+        # Give this method no more than 3 sec to finish
+        timeOut = time.time() + 3
+        while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:
+            time.sleep(0.1)
+
+    # Try normal powerDown API call
+    downable = [const.MachineState_Running, const.MachineState_Paused, const.MachineState_Stuck]
+    if vm.state in downable and vm.state != const.MachineState_PoweredOff:
+        try:
+            (dummy1, session) = openSession(vm, const.LockType_Shared)
+            session.console.powerDown()
+            # Give this method no more than 3 sec to finish
+            timeOut = time.time() + 3
+            while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:
+                time.sleep(0.1)
+            closeSession(session)
+        except:
+            dummy1 = True  # Dummy code. Try another method below
+
+    # Try power button API call
+    if vm.state != const.MachineState_PoweredOff:
+        try:
+            (dummy1, session) = openSession(vm, const.LockType_Shared)
+            session.console.powerButton()
+            # Give this method no more than 3 sec to finish
+            timeOut = time.time() + 3
+            while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:
+                time.sleep(0.1)
+            closeSession(session)
+        except:
+            dummy1 = True  # Dummy code. Try another method below
+
+    # Finally just kill the OS processes. Caveat: leaves VM in Aborted state
+    if vm.state != const.MachineState_PoweredOff:
+        killVM = "kill -9 `ps auxwww | grep \"VBoxHeadles[s] --comment {}" \
+                 " --startvm\" | awk '{print $2}'` > /dev/null 2>&1".format(vmName)
+        subprocess.call(killVM, shell=True)
+    return 0
 
 
 def noSSH(ip):
-  if invalidIP(ip):
-    return True
+    if invalidIP(ip):
+        return True
 
-  from contextlib import closing
-  with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-    if sock.connect_ex((ip, 22)) == 0:
-      return False
-    else:
-      return True
-  
-  # Send 1 packet and wait 300 milliseconds for a reply
-  liveIP = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
-  if liveIP:
-    return True
+    from contextlib import closing
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        if sock.connect_ex((ip, 22)) == 0:
+            return False
+        else:
+            return True
+
+    # Check if IP is active
+    # Send 1 packet and wait 300 milliseconds for a reply
+    # A non-zero value return means the IP is NOT alive, and probably not used
+    IPNotInUse = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
+    if IPNotInUse:
+        return True
 
 
 def vmSSH(args, verbose=True):
-  vmName = cmd = None
-  if len(args) == 2:
-    (vmName, cmd) = args
-  elif len(args) == 1:
-    vmName = args[0]
-  else:
-    print("Usage: vm ssh <vmName> [<cmd-to-run>]")
-    return 1
+    vmName = cmd = None
+    if len(args) == 2:
+        (vmName, cmd) = args
+    elif len(args) == 1:
+        vmName = args[0]
+    else:
+        print("Usage: vm ssh <vmName> [<cmd-to-run>]")
+        return 1
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
-  if vm.state != const.MachineState_Running:   
-    print("VM '{}' is not running".format(vmName))
-    return 1
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
+    if vm.state != const.MachineState_Running:
+        print("VM '{}' is not running".format(vmName))
+        return 1
 
-  ssh = "ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
-  ssh += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
+    ssh = "ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
+    ssh += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
-  ip = getIP(vm)
-  if noSSH(ip):
-    print("VM SSH unreachable over {}:22".format(ip))
-    return 1
+    ip = getIP(vm)
+    if noSSH(ip):
+        print("VM SSH unreachable over {}:22".format(ip))
+        return 1
 
-  # Run remote SSH command or do interactive logon. Note, vmuser is global
-  if cmd != None:
-    sshRun = ssh + " {}@{} \"{}\"".format(vmuser, ip, cmd)
-  else:
-    sshRun = ssh + " {}@{}".format(vmuser, ip)
+    # Run remote SSH command or do interactive logon. Note, vmuser is global
+    if cmd != None:
+        sshRun = ssh + " {}@{} \"{}\"".format(vmuser, ip, cmd)
+    else:
+        sshRun = ssh + " {}@{}".format(vmuser, ip)
 
-  if verbose:
-    subprocess.call(sshRun, shell=True)
-  else:
-    subprocess.call(sshRun + " > /dev/null 2>&1", shell=True)
-  return 0
+    if verbose:
+        subprocess.call(sshRun, shell=True)
+    else:
+        subprocess.call(sshRun + " > /dev/null 2>&1", shell=True)
+    return 0
 
 
 def vmSSHCopy(source, vmName, destination, verbose=True):
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
-  if vm.state != const.MachineState_Running:   
-    print("VM '{}' is not running".format(vmName))
-    return 1
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
+    if vm.state != const.MachineState_Running:
+        print("VM '{}' is not running".format(vmName))
+        return 1
 
-  scp = "scp -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
-  scp += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
+    scp = "scp -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
+    scp += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
-  ip = getIP(vm)
-  if noSSH(ip):
-    print("VM SSH unreachable over {}:22".format(ip))
-    return 1
+    ip = getIP(vm)
+    if noSSH(ip):
+        print("VM SSH unreachable over {}:22".format(ip))
+        return 1
 
-  # Copy source file to vm:destination
-  sshCopy = scp + " {} {}@{}:{}".format(source, vmuser, ip, destination)
+    # Copy source file to vm:destination
+    sshCopy = scp + " {} {}@{}:{}".format(source, vmuser, ip, destination)
 
-  if verbose:
-    subprocess.call(sshCopy, shell=True)
-  else:
-    subprocess.call(sshCopy + " > /dev/null 2>&1", shell=True)
-  return 0
+    if verbose:
+        subprocess.call(sshCopy, shell=True)
+    else:
+        subprocess.call(sshCopy + " > /dev/null 2>&1", shell=True)
+    return 0
 
 
 def vmDelete(args):
-  vmName = option = None
-  if len(args) == 2:
-    (vmName, option) = args
-  elif len(args) == 1:
-    vmName = args[0]
-  else:
-    print("Usage: vm del <vmName> [f]")
-    return 1
+    vmName = option = None
+    if len(args) == 2:
+        (vmName, option) = args
+    elif len(args) == 1:
+        vmName = args[0]
+    else:
+        print("Usage: vm del <vmName> [f]")
+        return 1
 
-  if option != "f": option = "normal"
+    if option != "f": option = "normal"
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
 
-  if option == "normal": 
-    msg = "Destroy VM '{}'? y/n ".format(vmName)
-    response = raw_input(msg)
-    if response != "y":
-      return 1
+    if option == "normal":
+        msg = "Destroy VM '{}'? y/n ".format(vmName)
+        response = raw_input(msg)
+        if response != "y":
+            return 1
 
-  if vm.state == const.MachineState_Running:   # Stop vm if it's running
-    vmStop([vmName, "f"])
+    if vm.state == const.MachineState_Running:   # Stop vm if it's running
+        vmStop([vmName, "f"])
 
-  # Give it 5 sec to stop
-  timeOut = time.time() + 5
-  while timeOut > time.time() and vm.sessionState != const.SessionState_Unlocked:   
-    time.sleep(0.1)
+    # Give it 5 sec to stop
+    timeOut = time.time() + 5
+    while timeOut > time.time() and vm.sessionState != const.SessionState_Unlocked:
+        time.sleep(0.1)
 
-  # Unregister machine and get the list of media attached to it
-  vmMedia = vm.unregister(const.CleanupMode_DetachAllReturnHardDisksOnly)
-  # CleanupMode UnregisterOnly=0, DetachAllReturnNone=1, DetachAllReturnHardDisksOnly=2, Full=3
-  # Delete all the media
-  progress = vm.deleteConfig(vmMedia)
-  while not progress.completed:
-    time.sleep(0.1)
-  return 0
+    # Unregister machine and get the list of media attached to it
+    vmMedia = vm.unregister(const.CleanupMode_DetachAllReturnHardDisksOnly)
+    # CleanupMode UnregisterOnly=0, DetachAllReturnNone=1, DetachAllReturnHardDisksOnly=2, Full=3
+    # Delete all the media
+    progress = vm.deleteConfig(vmMedia)
+    while not progress.completed:
+        time.sleep(0.1)
+    return 0
 
 
 def vmInfo(args):
-  if len(args) != 1:
-    print("Usage: vm info <vmName>")
-    return 1
-  vmName = args[0]
+    if len(args) != 1:
+        print("Usage: vm info <vmName>")
+        return 1
+    vmName = args[0]
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
 
-  # The most important attributes
-  fmt = "{:40}  {}"
-  print(fmt.format("Name", vmName))
-  print(fmt.format("ID", vm.id))
-  print(fmt.format("OS_Type_ID", vm.OSTypeId))
-  print(fmt.format("CPUs", vm.CPUCount))
-  print(fmt.format("RAM(MB)", vm.memorySize))
-  print(fmt.format("ChipsetType", enumElem("ChipsetType", vm.chipsetType)))
-  print(fmt.format("ClipboardMode", enumElem("ClipboardMode", vm.clipboardMode)))
-  print(fmt.format("MachineStatus", enumElem("MachineState", vm.state)))
-  print(fmt.format("SessionStatus", enumElem("SessionState", vm.sessionState)))
-  if vm.teleporterEnabled:
-    print(fmt.format("Teleporter port/pwd" , vm.teleporterPort + '/' + vm.teleporterPassword))
-  print(fmt.format("ACPI", vm.BIOSSettings.ACPIEnabled))
-  print(fmt.format("APIC", vm.BIOSSettings.IOAPICEnabled))
-  print(fmt.format("Hardware_Virtualization", vm.getHWVirtExProperty(const.HWVirtExPropertyType_Enabled)))
-  print(fmt.format("Use_UTC", vm.RTCUseUTC))
-  if vm.audioAdapter.enabled:
-    print(fmt.format("Audio_chip:host-driver", str(vm.audioAdapter.audioController) + ':' + str(vm.audioAdapter.audioDriver)))
-  print(fmt.format("Keyboard", enumElem("KeyboardHIDType", vm.keyboardHIDType)))
-  print(fmt.format("Pointing_Device", enumElem("PointingHIDType", vm.pointingHIDType)))
-  # OSE has no VRDE
-  try:
-    print(fmt.format("VRDE_Server_Enabled", vm.VRDEServer.enabled))
-  except:
-    pass
-  for c in vboxmgr.getArray(vm, 'USBControllers'):
-    print(fmt.format("USB Controllers", 'type=' + c.type + ' ' + 'standard=' + c.USBStandard))
-  print(fmt.format("IOCacheEnabled", vm.IOCacheEnabled))
-  print(fmt.format("IOCacheSize(MB)", vm.IOCacheSize))
-  storageControllers = vboxmgr.getArray(vm, 'storageControllers')
-  if storageControllers:
-    for c in storageControllers:
-      print(fmt.format("StorageControllers", c.name + ': bus=' + str(c.bus) + ' ' + 'type=' + enumElem("StorageControllerType", c.controllerType)))
-  attaches = vboxmgr.getArray(vm, 'mediumAttachments')
-  if attaches:
-    for a in attaches:
-      print(fmt.format("Media", 'controller=' + a.controller + '   ' + 'port/dev=' + str(a.port) + ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
-      medium = a.medium
-      if a.type == const.DeviceType_HardDisk:
-        print(fmt.format("  ID", medium.id))
-        print(fmt.format("  Path", medium.location))
-      if a.type == const.DeviceType_DVD:
-        if medium:
-          print(fmt.format("  ID", medium.id))
-          if medium.hostDrive:
-            print(fmt.format("  HostDVD", medium.location))
-            if a.passthrough:
-              print(fmt.format("  [passthrough mode]", ''))
-          else:
-            print(fmt.format("  Path", medium.location))
+    # The most important attributes
+    fmt = "{:40}  {}"
+    print(fmt.format("Name", vmName))
+    print(fmt.format("ID", vm.id))
+    print(fmt.format("OS_Type_ID", vm.OSTypeId))
+    print(fmt.format("CPUs", vm.CPUCount))
+    print(fmt.format("RAM(MB)", vm.memorySize))
+    print(fmt.format("MachineStatus", enumElem("MachineState", vm.state)))
+    print(fmt.format("SessionStatus", enumElem("SessionState", vm.sessionState)))
 
-  # Note: The API documentation has getSharedFolders() func incorectly listed as sharedFolders()
-  if len(vm.getSharedFolders()) > 0:
-    print(fmt.format("Shared_Folders", ''))
-    for sf in vm.getSharedFolders():
-      print(fmt.format("  Name", sf.name))
-      print(fmt.format("    HostPath", sf.hostPath))
-      print(fmt.format("    Accessible", sf.accessible))
-      print(fmt.format("    Writable", sf.writable))
-      print(fmt.format("    AutoMount", sf.autoMount))
-      print(fmt.format("    LastAccessErr", sf.lastAccessError))
+    for c in vboxmgr.getArray(vm, 'USBControllers'):
+        print(fmt.format("USB Controllers", 'type=' + c.type + ' ' + 'standard=' + c.USBStandard))
+    storageControllers = vboxmgr.getArray(vm, 'storageControllers')
+    if storageControllers:
+        for c in storageControllers:
+            print(fmt.format("StorageControllers", c.name + ': bus=' + str(c.bus) + ' ' + 'type=' + enumElem("StorageControllerType", c.controllerType)))
+    attaches = vboxmgr.getArray(vm, 'mediumAttachments')
+    if attaches:
+        for a in attaches:
+            print(fmt.format("MEDIA", 'controller=' + a.controller + '   ' + 'port/dev=' + str(a.port) + ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
+            medium = a.medium
+            if a.type == const.DeviceType_HardDisk:
+                print(fmt.format("  ID", medium.id))
+                print(fmt.format("  Path", medium.location))
+            if a.type == const.DeviceType_DVD:
+                if medium:
+                    print(fmt.format("  ID", medium.id))
+                    if medium.hostDrive:
+                        print(fmt.format("  HostDVD", medium.location))
+                        if a.passthrough:
+                            print(fmt.format("  [passthrough mode]", ''))
+                    else:
+                        print(fmt.format("  Path", medium.location))
 
-  # Network Adapters: We only care about nic0 and nic1
-  print(fmt.format("Network_Adapters", ''))
-  for slot in [0, 1]:
-    nic = vm.getNetworkAdapter(slot)
-    nicStatus = "Disabled"
-    if nic.enabled:
-      nicStatus = "Enabled"
-    print(fmt.format("  eth" + str(slot), nicStatus))
-    if nicStatus == "Disabled": continue 
-    print(fmt.format("    Type", enumElem("NetworkAdapterType", nic.adapterType)))
-    attachType = enumElem("NetworkAttachmentType", nic.attachmentType)
-    print(fmt.format("    AttachmentType", attachType))
-    print(fmt.format("    MAC", nic.MACAddress))
-    print(fmt.format("    CableConnected", nic.cableConnected))
-    print(fmt.format("    PromiscuousMode", enumElem("NetworkAdapterPromiscModePolicy", nic.promiscModePolicy)))
-    if attachType == "Bridged":
-      print(fmt.format("    BridgedIF", nic.bridgedInterface))
-    elif attachType == "HostOnly":
-      print(fmt.format("    HostOnlyIF", nic.hostOnlyInterface))
-    elif attachType == "NAT":
-      if len(nic.NATEngine.getRedirects()) > 0:      # List any existing port-forward rules
-        print(fmt.format("    NATEngine", ''))
-        for pfRule in nic.NATEngine.getRedirects():
-          pfRule = pfRule.split(",")  # convert string to list
-          if pfRule[1] == 0:          # enum 2nd element constant to either 0:udp or 1:tcp
-            pfRule[1] = "udp"
-          else:
-            pfRule[1] = "tcp"
-          pfRule = ",".join(pfRule)   # convert list back to string
-          print(fmt.format("      PortFwdRule", pfRule))
-      print(fmt.format("      DNSPassDomain", nic.NATEngine.DNSPassDomain))
-      print(fmt.format("      DNSProxy", nic.NATEngine.DNSProxy))
-      print(fmt.format("      DNSUseHostResolver", nic.NATEngine.DNSUseHostResolver))          
-    ipProp = "/VirtualBox/GuestInfo/Net/" + str(slot) + "/V4/IP"
-    ip = vm.getGuestPropertyValue(ipProp)
-    print(fmt.format("    IPAddress", ip))
+    # Note: The API documentation has getSharedFolders() func incorectly listed as sharedFolders()
+    if len(vm.getSharedFolders()) > 0:
+        print(fmt.format("SHARED_FOLDERS", ''))
+        for sf in vm.getSharedFolders():
+            print(fmt.format("  Name", sf.name))
+            print(fmt.format("    HostPath", sf.hostPath))
+            print(fmt.format("    Accessible", sf.accessible))
+            print(fmt.format("    Writable", sf.writable))
+            print(fmt.format("    AutoMount", sf.autoMount))
+            print(fmt.format("    LastAccessErr", sf.lastAccessError))
 
-  # Guest Addition properties
-  # Do the ISO path manually
-  print(fmt.format("/VirtualBox/GuestAdd/ISOFile", vbox.systemProperties.defaultAdditionsISO))
-  # The others in a sorted loop
-  propFilter = None    # Pattern to search for. None = get all properties
-  propList = vm.enumerateGuestProperties(propFilter)
-  # The SDK documentation again confusingly states that enumerateGuestProperties returns a 'void'
-  # when in actuality it returns a list of 4 lists data structure, which we'll call propList. We only
-  # care about Names and Values list, and we disregard Timestamps and Flags
-  propNames = propList[0]
-  propValues = propList[1]
-  propDict = {}                           # Create/use a dictionary for printing them sorted
-  for i in range(len(propNames)):
-    propDict[propNames[i]] = propValues[i]
-  for key in sorted(propDict.iterkeys()):
-    print(fmt.format(key, propDict[key]))
-  return 0
+    # Network Adapters: We only care about nic0 and nic1
+    print(fmt.format("NETWORK_ADAPTERS", ''))
+    for slot in [0, 1]:
+        nic = vm.getNetworkAdapter(slot)
+        nicStatus = "Disabled"
+        if nic.enabled:
+            nicStatus = "Enabled"
+        print(fmt.format("  eth" + str(slot), nicStatus))
+        if nicStatus == "Disabled": continue
+        print(fmt.format("    Type", enumElem("NetworkAdapterType", nic.adapterType)))
+        attachType = enumElem("NetworkAttachmentType", nic.attachmentType)
+        print(fmt.format("    AttachmentType", attachType))
+        print(fmt.format("    MAC", nic.MACAddress))
+        print(fmt.format("    CableConnected", nic.cableConnected))
+        print(fmt.format("    PromiscuousMode", enumElem("NetworkAdapterPromiscModePolicy", nic.promiscModePolicy)))
+        if attachType == "Bridged":
+            print(fmt.format("    BridgedIF", nic.bridgedInterface))
+        elif attachType == "HostOnly":
+            print(fmt.format("    HostOnlyIF", nic.hostOnlyInterface))
+        elif attachType == "NAT":
+            if len(nic.NATEngine.getRedirects()) > 0:      # List any existing port-forward rules
+                print(fmt.format("    NATEngine", ''))
+                for pfRule in nic.NATEngine.getRedirects():
+                    pfRule = pfRule.split(",")  # convert string to list
+                    if pfRule[1] == 0:          # enum 2nd element constant to either 0:udp or 1:tcp
+                        pfRule[1] = "udp"
+                    else:
+                        pfRule[1] = "tcp"
+                    pfRule = ",".join(pfRule)   # convert list back to string
+                    print(fmt.format("      PortFwdRule", pfRule))
+            print(fmt.format("      DNSPassDomain", nic.NATEngine.DNSPassDomain))
+            print(fmt.format("      DNSProxy", nic.NATEngine.DNSProxy))
+            print(fmt.format("      DNSUseHostResolver", nic.NATEngine.DNSUseHostResolver))
+        ipProp = "/VirtualBox/GuestInfo/Net/" + str(slot) + "/V4/IP"
+        ip = vm.getGuestPropertyValue(ipProp)
+        print(fmt.format("    IPAddress", ip))
+
+    # Guest Addition properties
+    # Do the ISO path manually
+    print(fmt.format("/VirtualBox/GuestAdd/ISOFile", vbox.systemProperties.defaultAdditionsISO))
+    # The others in a sorted loop
+    propFilter = None    # Pattern to search for. None = get all properties
+    propList = vm.enumerateGuestProperties(propFilter)
+    # The SDK documentation again confusingly states that enumerateGuestProperties returns a 'void'
+    # when in actuality it returns a list of 4 lists data structure, which we'll call propList. We only
+    # care about Names and Values lists, and we disregard Timestamps and Flags
+    propNames = propList[0]
+    propValues = propList[1]
+    propDict = {}                     # Create/use a dictionary for printing them sorted
+    for i in range(len(propNames)):
+        propDict[propNames[i]] = propValues[i]
+    for key in sorted(propDict.iterkeys()):
+        print(fmt.format(key, propDict[key]))
+    return 0
+
+
+def getMainNIC():
+    nicList = getNetList()
+    for nic in nicList:
+        # Return first NIC name with valid IP address
+        if nic.name[:2] != 'en':
+            continue
+        if nic.IPAddress == "0.0.0.0":
+            continue
+        return nic.name
+    return ''
 
 
 def getNetList():
-  # Get list of vboxnet networks defined on this host. We only care about HostOnly networks
-  netList = []
-  for nic in vbox.host.getNetworkInterfaces():
-    if nic.interfaceType == 2:  # HostNetworkInterfaceType  0=None  1=Bridged  2=HostOnly 
-      netList.append(nic)
-  return netList
+    # Get list of Bridged and HostOnly networks defined on this host
+    netList = []
+    for nic in vbox.host.getNetworkInterfaces():
+        if nic.interfaceType in [1, 2]:  # HostNetworkInterfaceType  1=Bridged  2=HostOnly
+            netList.append(nic)
+    return netList
+
+
+def netType(args):
+    vmName = nettype = None
+    if len(args) == 2:
+        (vmName, nettype) = args
+    else:
+        print("Usage: vm nettype <vmName> <ho[bri]>")
+        return 1
+    if nettype not in ['ho', 'bri']:
+        print("Usage: vm nettype <vmName> <ho[bri]>")
+        return 1
+
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
+    if vm.state == const.MachineState_Running:
+        print("VM '{}' needs to be powered off for this".format(vmName))
+        return 1
+
+    (vmMuta, session) = openSession(vm, const.LockType_Write)
+    vmMuta.setGuestPropertyValue("/vm/nettype", nettype)
+    closeSession(session)
+    return 0
 
 
 def netList():
-  netList = getNetList()
-  if len(netList) == 0:
+    netList = getNetList()
+    if len(netList) != 0:
+        fmt = "{:24}{:12}{:12}{:16}{:16}{}"
+        print(fmt.format("NAME", "TYPE", "DHCP", "IPADDRESS", "NETMASK", "STATUS"))
+        for net in netList:
+            dhcpStatus = 'Disabled'
+            if net.DHCPEnabled:
+                dhcpStatus = 'Enabled'
+            print(fmt.format(net.name, \
+                             enumElem("HostNetworkInterfaceType", net.interfaceType), \
+                             # HostNetworkInterfaceType  1=Bridged, 2=HostOnly
+                             dhcpStatus, \
+                             net.IPAddress, \
+                             net.networkMask, \
+                             enumElem("HostNetworkInterfaceStatus", net.status)))
+                             # HostNetworkInterfaceStatus 0=Unknown, 1=Up, 2=Down
     return 0
-  else:
-    fmt = "{:20}{:12}{:16}{:16}{}"
-    print(fmt.format("NAME", "DHCP", "GATEWAY", "NETMASK", "STATUS"))
-    for net in netList:
-      dhcpStatus = 'Disabled'
-      if net.DHCPEnabled:
-        dhcpStatus = 'Enabled'
-      print(fmt.format(net.name, dhcpStatus, net.IPAddress, \
-            net.networkMask, enumElem("HostNetworkInterfaceStatus", net.status)))
-            # HostNetworkInterfaceStatus Unknown=0, Up=1, Down=2
-  return 0
 
 
 def netAdd(args):
-  if len(args) != 1:
-    print("Usage: vm netadd <gateway-ip>")
-    return 1
-  ip = args[0]
-  if invalidIP(ip):
-    print("IP address '{}' is invalid".format(ip))
-    return 1
-  if ip.split('.')[3] != "1":
-    print("Gateway IP address must end in .1")
-    return 1
-  (progress, newNet) = vbox.host.createHostOnlyNetworkInterface()
-  # NOTE: Another poorly documented API function (not 100% clear it returns 2 values)
-  while not progress.completed:
-    time.sleep(0.01)
-  if newNet.name == None:
-    print("Error creating new vboxnet")
-    return None
-  # Assign given IP address to the new vboxnet
-  newNet.enableStaticIPConfig(ip, '255.255.255.0')
-  return newNet.name
+    if len(args) != 1:
+        print("Usage: vm netadd <gateway-ip>")
+        return 1
+    ip = args[0]
+    if invalidIP(ip):
+        print("IP address '{}' is invalid".format(ip))
+        return 1
+    if ip.split('.')[3] != "1":
+        print("Gateway IP address must end in .1")
+        return 1
+    (progress, newNet) = vbox.host.createHostOnlyNetworkInterface()
+    # NOTE: Another poorly documented API function (not 100% clear it returns 2 values)
+    while not progress.completed:
+        time.sleep(0.01)
+    if newNet.name == None:
+        print("Error creating new vboxnet")
+        return None
+    # Assign given IP address to the new vboxnet
+    newNet.enableStaticIPConfig(ip, '255.255.255.0')
+    return newNet.name
 
 
 def netDelete(args):
-  if len(args) != 1:
-    print("Usage: vm netdel <vboxnetX>")
-    return 1
-  vboxnetName = args[0]
-  vboxnetDoesntExists = True
-  for net in getNetList():
-    if net.name == vboxnetName:
-      vboxnetDoesntExists = False
-      break
-  if vboxnetDoesntExists:
-    print("Network '{}' doesn't exist.".format(vboxnetName))
-    return 1
-  progress = vbox.host.removeHostOnlyNetworkInterface(net.id)
-  while not progress.completed:
-    time.sleep(0.01)
-  return 0
+    # Delete given HostOnly network name
+    if len(args) != 1:
+        print("Usage: vm netdel <vboxnetX>")
+        return 1
+    vboxnetName = args[0]
+    vboxnetDoesntExists = True
+    for net in getNetList():
+        if net.interfaceType == 2 and net.name == vboxnetName:    # Only for interfaceType 2 (HostOnly)
+            vboxnetDoesntExists = False
+            break
+    if vboxnetDoesntExists:
+        print("HostOnly network '{}' doesn't exist.".format(vboxnetName))
+        return 1
+    progress = vbox.host.removeHostOnlyNetworkInterface(net.id)
+    while not progress.completed:
+        time.sleep(0.01)
+    return 0
 
 
 def vmIp(args):
-  vmName = ip = None
-  if len(args) == 2:
-    (vmName, ip) = args
-  else:
-    print("Usage: vm ip <vmName> <ip>")
-    return 1
+    vmName = ip = None
+    if len(args) == 2:
+        (vmName, ip) = args
+    else:
+        print("Usage: vm ip <vmName> <ip>")
+        return 1
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
 
-  if usedIP(ip):
-    print("IP '{}' is already in used by another VM".format(ip))
-    return 1
+    if usedIP(ip):
+        print("IP '{}' is already in used by another VM".format(ip))
+        return 1
 
-  if vm.state == const.MachineState_Running:   
-    print("MV '{}' needs to be powered off for this".format(vmName))
-    return 1
+    if vm.state == const.MachineState_Running:
+        print("MV '{}' needs to be powered off for this".format(vmName))
+        return 1
 
-  if setIP(vm, ip) != 0:
-    print("Unable to set VM '{}' IP to '{}'".format(vmName, ip))
-    return 1
-  return 0
+    if not setIP(vm, ip):
+        print("Unable to set VM '{}' IP to '{}'".format(vmName, ip))
+        return 1
+    return 0
 
 
 def vmMod(args):
-  vmName = cpu = memory = None
-  if len(args) == 3 and args[1].isdigit() and args[2].isdigit():
-    (vmName, cpu, memory) = args
-  elif len(args) == 2 and args[1].isdigit():
-    (vmName, cpu) = args
-    memory = "1024"        # Default to 1024, if no memory setting provided
-  else:
-    print("Usage: vm mod <vmName> <cpus> [<memory>]")
-    return 1
-  cpu = int(cpu)
-  memory = int(memory) 
+    vmName = cpu = memory = None
+    if len(args) == 3 and args[1].isdigit() and args[2].isdigit():
+        (vmName, cpu, memory) = args
+    elif len(args) == 2 and args[1].isdigit():
+        (vmName, cpu) = args
+        memory = "1024"        # Default to 1024, if no memory setting provided
+    else:
+        print("Usage: vm mod <vmName> <cpus> [<memory>]")
+        return 1
+    cpu = int(cpu)
+    memory = int(memory)
 
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("VM '{}' doesn't exist".format(vmName))
-    return 1
-  if vm.state == const.MachineState_Running:   
-    print("VM '{}' needs to be powered off for this".format(vmName))
-    return 1
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("VM '{}' doesn't exist".format(vmName))
+        return 1
+    if vm.state == const.MachineState_Running:
+        print("VM '{}' needs to be powered off for this".format(vmName))
+        return 1
 
-  if (vbox.host.processorOnlineCount - cpu) < 2:
-    print("Error: This host only has {} CPUs. Assigning {} will oversubscribe it"
-          .format(vbox.host.processorOnlineCount, cpu))
-    return 1
-  if (vbox.host.memoryAvailable - memory) < 1024:
-    print("Error: This host only has {}MB of RAM. Assigning '{}' will oversubscribe it"
-          .format(vbox.host.memoryAvailable, memory))
-    return 1
+    if (vbox.host.processorOnlineCount - cpu) < 2:
+        print("Error: This host only has {} CPUs. Assigning {} will oversubscribe it"
+              .format(vbox.host.processorOnlineCount, cpu))
+        return 1
+    if (vbox.host.memoryAvailable - memory) < 1024:
+        print("Error: This host only has {}MB of RAM. Assigning '{}' will oversubscribe it"
+              .format(vbox.host.memoryAvailable, memory))
+        return 1
 
-  (vmMuta, session) = openSession(vm, const.LockType_Write)
-  vmMuta.CPUCount    = cpu
-  vmMuta.memorySize  = memory
-  vmMuta.RTCUseUTC   = True
-  vmMuta.BIOSSettings.IOAPICEnabled = True
-  vmMuta.BIOSSettings.bootMenuMode  = const.BIOSBootMenuMode_Disabled
-  closeSession(session)
-  return 0
+    (vmMuta, session) = openSession(vm, const.LockType_Write)
+    vmMuta.CPUCount    = cpu
+    vmMuta.memorySize  = memory
+    closeSession(session)
+    return 0
 
 
 def vmProvision(args):
-  global vmconf
-  if len(args) == 1 and args[0].lower() == "c":   # Create a template file if it was requested
-    if os.path.isfile(vmconf):
-      msg = "File '{}' exists. Overwrite it? y/n ".format(vmconf)
-      response = raw_input(msg)
-      if response != "y":
+    global vmconf
+    if len(args) == 1 and args[0].lower() == "c":   # Create a template file if it was requested
+        if os.path.isfile(vmconf):
+            msg = "File '{}' exists. Overwrite it? y/n ".format(vmconf)
+            response = raw_input(msg)
+            if response != "y":
+                return 1
+        CreateVMConf()
+        return 0
+
+    if len(args) == 1 and os.path.isfile(args[0]):  # Provision with optional given conf file
+        vmconf = args[0]
+    elif not os.path.isfile(vmconf):                # Abort if vm.conf does not exist at all
+        print("Usage: vm prov [<vmConf>|c]")
+        return 0
+
+    # Prohibit running this command from HOME directory
+    if os.getcwd() == os.environ['HOME']:
+        print("Running this utility from your HOME dir is prohibited for security reasons.\n"
+              "Please work from a separate working directory.")
         return 1
-    CreateVMConf()
+
+    print("=> Provisioning VMs defined in file {}".format(vmconf))
+
+    # Parse vmconf for inconsistencies
+    cfg = ConfigParser()
+    cfg.read(vmconf)
+    if len(cfg.sections()) < 1:
+        print("=> No VM sections defined!")
+        return 1
+
+    # Ensure each VM section has the required minimum number of variables
+    for sect in cfg.sections():
+        if 'image' in cfg.options(sect) and 'netip' in cfg.options(sect):
+            continue
+        print("=> Each section needs at least these 2 variables defined: 'image' and 'netip'!")
+        return 1
+
+    # Provision each VM as per its parameters defined in its vmconf section
+    for sect in cfg.sections():
+        # NOTE: We leave an existing VM running if it is both named and configured exactly as
+        # defined in  vmconf. If it's configured differently, then we'll stop it, modify it, then
+        # restart it. If the VM doesn't exist then the process is to simply create a new one
+
+        # Get the 6 possible config entries for this VM
+
+        vmName = sect                            # 1 name (Mandatory). Same as the section name
+
+        print("[{}] Provisioning this VM".format(vmName))
+
+        vmImg = cfg.get(sect, 'image')           # 2 image (Mandatory)
+        vmImgPath = os.path.join(vmhome, vmImg)
+        if not os.path.isfile(vmImgPath):
+            print("[{}] Image '{}' doesn't exist. Please specify an available image".format(vmName, vmImg))
+            return 1
+
+        vmNetIp = cfg.get(sect, 'netip')         # 3 netip (Mandatory)
+        if invalidIP(vmNetIp) or vmNetIp.endswith(".1"):
+            print("[{}] IP address '{}' is invalid".format(vmName, vmNetIp))
+            return 1
+
+        if 'cpus' in cfg.options(sect):          # 4 cpus
+            vmCpus = cfg.get(sect, 'cpus')
+        else:
+            vmCpus = 1
+
+        if 'memory' in cfg.options(sect):        # 5 memory
+            vmMemory = cfg.get(sect, 'memory')
+        else:
+            vmMemory = 1024
+
+        if 'vmcopy' in cfg.options(sect):        # 6 vmcopy
+            vmCopy = cfg.get(sect, 'vmcopy')
+        else:
+            vmCopy = None
+
+        if 'vmrun' in cfg.options(sect):         # 7 vmrun
+            vmRun = cfg.get(sect, 'vmrun')
+        else:
+            vmRun = None
+
+        if 'nettype' in cfg.options(sect):       # 8 nettype
+            vmNettype = cfg.get(sect, 'nettype')
+        else:
+            vmNettype = 'ho'
+
+        # Note, basic parameters updates can only be applied when the VM is powered off,
+        # which is why we're doing the checks/updates here. If the VM is running and it's
+        # already configured as per vmconf then we want to leave it alone
+        try:
+            vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+            print("[{}] This VM already exists!".format(vmName))
+        except:
+            if vmCreate([vmName, vmImg]) != 0:
+                print("[{}] Error creating this VM".format(vmName))
+                return 1
+            vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+
+        # Assume VM is already configured as per vmconf, then compare each parameter to disprove that
+        sameConfig = True
+
+        # IP Address
+        currentVmNetIp = getIP(vm)
+        if currentVmNetIp != vmNetIp:
+            for vmTmp in vbox.getMachines():   # Check if proposed IP is already taken
+                if vmTmp.name == vm.name:
+                    continue   # Skip this machine itself
+                if getIP(vmTmp) == vmNetIp:
+                    print("[{}] IP '{}' is already taken by VM '{}'".format(vmName, vmNetIp, vmTmp.name))
+                    return 1
+            sameConfig = False
+            print("[{}] Setting IP address to '{}'".format(vmName, vmNetIp))
+
+        # CPUs
+        if vm.CPUCount != int(vmCpus):
+            sameConfig = False
+            print("[{}] Setting CPU count to '{}'".format(vmName, str(vmCpus)))
+
+        # Memory
+        if vm.memorySize != int(vmMemory):
+            sameConfig = False
+            print("[{}] Setting memory to '{}'".format(vmName, str(vmMemory)))
+
+        # Perform update if any one parameter was different
+        if sameConfig:
+            print("[{}] VM is already configured exactly as per given config file".format(vmName))
+            if vm.state != const.MachineState_Running:   # Start machine if not already running
+                ret = vmStart([vmName])
+                if ret != 0:
+                    print("[{}] Error starting this VM".format(vmName))
+        else:
+            print("[{}] Applying configurations".format(vmName))
+            if vm.state == const.MachineState_Running:   # Stop machine if already running
+                vmStop([vmName, "f"])
+            vmMod([vmName, str(vmCpus), str(vmMemory)])  # Update cpu and memory (note the string conversion)
+            netType([vmName, vmNettype])                 # Set Net Type
+            setIP(vm, vmNetIp)                           # Update IP address
+            ret = vmStart([vmName])                      # Start machine
+            if ret != 0:
+                print("[{}] Error starting VM".format(vmName))
+
+        # Run VMCOPY COMMAND
+        if vmCopy:
+            print("{}: VMCOPY: '{}'".format(vmName, vmCopy))
+            source = vmCopy.strip('"').split()[0]
+            destination = vmCopy.strip('"').split()[1]
+            timeOut = time.time() + 120
+            while timeOut > time.time() and noSSH(vmNetIp):  # Wait a bit till SSH is ready
+                time.sleep(0.1)
+            vmSSHCopy(source, vmName, destination)
+
+        # Run VMRUN COMMAND
+        if vmRun:
+            print("{}: VMRUN: '{}'".format(vmName, vmRun))
+            vmSSH([vmName, vmRun])
     return 0
-
-  if len(args) == 1 and os.path.isfile(args[0]):  # Provision with optional given conf file
-    vmconf = args[0]
-  elif not os.path.isfile(vmconf):                # Abort if vm.conf does not exist at all
-    print("Usage: vm prov [<vmConf>|c]")
-    return 0  
-
-  # Prohibit running this command from HOME directory
-  if os.getcwd() == os.environ['HOME']:
-    print("Running this utility from your HOME dir is prohibited for security reasons.\n"
-          "Please work from a separate working directory.")
-    return 1
-
-  # Parse vmconf for inconsistencies
-  cfg = ConfigParser()
-  cfg.read(vmconf)
-  if len(cfg.sections()) < 1:
-    print("{}: No VM sections defined".format(vmconf))
-    return 1
-
-  # Ensure each VM section has the required minimum number of variables
-  for sect in cfg.sections():
-    if 'image' in cfg.options(sect) and 'netip' in cfg.options(sect):
-      continue
-    print("{}: Each section needs at least these 2 variables defined: 'image' and 'netip'"
-          .format(vmconf))
-    return 1
-
-  # Provision each VM as per its parameters defined in its vmconf section
-  for sect in cfg.sections():
-    # NOTE: We leave an existing VM running if it is both named and configured exactly as
-    # defined in  vmconf. If it's configured differently, then we'll stop it, modify it, then
-    # restart it. If the VM doesn't exist then the process is to simply create a new one
-
-    # Get the 6 possible config entries for this VM
-
-    vmName = sect                            # 1 name (Mandatory). Same as the section name
-
-    print("{}: VM {}: Provisioning".format(vmconf, vmName))
-
-    vmImg = cfg.get(sect, 'image')           # 2 image (Mandatory)
-    vmImgPath = os.path.join(vmhome, vmImg)
-    if not os.path.isfile(vmImgPath): 
-      print("{}: VM {}: Image '{}' doesn't exist. Please specify an available image".format(vmconf, vmName, vmImg))
-      return 1
-
-    vmNetIp = cfg.get(sect, 'netip')         # 3 netip (Mandatory)
-    if invalidIP(vmNetIp) or vmNetIp.endswith(".1"):
-      print("{}: VM {}: IP address '{}' is invalid".format(vmconf, vmName, vmNetIp))
-      return 1
-
-    if 'cpus' in cfg.options(sect):          # 4 cpus
-      vmCpus = cfg.get(sect, 'cpus')
-    else:
-      vmCpus = 1
-  
-    if 'memory' in cfg.options(sect):        # 5 memory
-      vmMemory = cfg.get(sect, 'memory')
-    else:
-      vmMemory = 1024
-  
-    if 'vmcopy' in cfg.options(sect):        # 6 vmcopy
-      vmCopy = cfg.get(sect, 'vmcopy')
-    else:
-      vmCopy = None
-
-    if 'vmrun' in cfg.options(sect):         # 7 vmrun
-      vmRun = cfg.get(sect, 'vmrun')
-    else:
-      vmRun = None
-
-    # Note, basic parameters updates can only be applied when the VM is powered off,
-    # which is why we're doing the checks/updates here. If the VM is running and it's
-    # already configured as per vmconf then we want to leave it alone
-    try:
-      vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-      print("{}: VM {}: This VM already exists".format(vmconf, vmName))
-    except:
-      if vmCreate([vmName, vmImg]) != 0:
-        print("{}: VM {}: Error creating VM".format(vmconf, vmName))
-        return 1
-      vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-    
-    # Assume VM is already configured as per vmconf, then compare each parameter to disprove that
-    sameConfig = True
-
-    # IP Address
-    currentVmNetIp = getIP(vm)
-    if currentVmNetIp != vmNetIp:
-      for vmTmp in vbox.getMachines():   # Check if proposed IP is already taken
-        if vmTmp.name == vm.name:
-          continue   # Skip this machine itself
-        if getIP(vmTmp) == vmNetIp:
-          print("{}: VM {}: IP '{}' is already taken by VM '{}'".format(vmconf, vmName, vmNetIp, vmTmp.name))
-          return 1
-      sameConfig = False
-      print("{}: VM {}: Setting IP address to '{}'".format(vmconf, vmName, vmNetIp))
-
-    # CPUs
-    if vm.CPUCount != int(vmCpus):
-      sameConfig = False
-      print("{}: VM {}: Setting CPU count to '{}'".format(vmconf, vmName, str(vmCpus)))
-
-    # Memory  
-    if vm.memorySize != int(vmMemory):
-      sameConfig = False
-      print("{}: VM {}: Setting memory to '{}'".format(vmconf, vmName, str(vmMemory)))
-
-    # Perform update if any one parameter was different
-    if sameConfig:
-      print("{}: VM {}: VM is already configured as per config file".format(vmconf, vmName))
-      if vm.state != const.MachineState_Running:   # Start machine if not already running
-        ret = vmStart([vmName])
-        if ret != 0:
-          print("{}: VM {}: Error starting VM".format(vmconf, vmName))
-    else:
-      print("{}: VM {}: Updating as per config file".format(vmconf, vmName))
-      if vm.state == const.MachineState_Running:   # Stop machine if already running
-        vmStop([vmName, "f"])
-      vmMod([vmName, str(vmCpus), str(vmMemory)])  # Update cpu and memory (note the string conversion)
-      setIP(vm, vmNetIp)                           # Update IP address
-      ret = vmStart([vmName])                      # Start machine
-      if ret != 0:
-        print("{}: VM {}: Error starting VM".format(vmconf, vmName))
-
-    # Run VMCOPY COMMAND
-    if vmCopy:
-      print("{}: VMCOPY: '{}'".format(vmName, vmCopy))
-      source = vmCopy.strip('"').split()[0]
-      destination = vmCopy.strip('"').split()[1]
-      timeOut = time.time() + 120
-      while timeOut > time.time() and noSSH(vmNetIp):  # Wait a bit till SSH is ready
-        time.sleep(0.1)
-      vmSSHCopy(source, vmName, destination)
-
-    # Run VMRUN COMMAND
-    if vmRun:
-      print("{}: VMRUN: '{}'".format(vmName, vmRun))
-      vmSSH([vmName, vmRun])
-  return 0
 
 
 def imgList():
-  fList = []
-  for f in os.listdir(vmhome):
-    if f.lower().endswith(".ova"):
-      fList.append(f)
-  if len(fList) < 1: return 1   # No OVA files to list, so return empty-handed
-  fmt = "{:<34}{:<54}{}"
-  print(fmt.format('NAME', 'PATH', 'SIZE'))
-  for fName in fList:
-    fPath = os.path.join(vmhome, fName)
-    fSize = str(os.path.getsize(fPath) >> 20) + 'MB'    # Note shift by 20 to get size in MB
-    hddFile = '<undefined>' 
-    if not tarfile.is_tarfile(fPath): continue          # It's named *.ova but it's not an OVA file (tar file)
-    print(fmt.format(fName, fPath, fSize))
-  return 0
+    fList = []
+    for f in os.listdir(vmhome):
+        if f.lower().endswith(".ova"):
+            fList.append(f)
+    if len(fList) < 1: return 1   # No OVA files to list, so return empty-handed
+    fmt = "{:<34}{:<54}{:<8}{}"
+    print(fmt.format('NAME', 'PATH', 'SIZE', 'DATE'))
+    for fName in fList:
+        fPath = os.path.join(vmhome, fName)
+        fSize = str(os.path.getsize(fPath) >> 20) + 'MB'    # Note shift by 20 to get size in MB
+        fDate = time.strftime('%Y-%m-%d %H:%M', time.gmtime(os.path.getmtime(fPath)))
+        hddFile = '<undefined>'
+        if not tarfile.is_tarfile(fPath): continue          # It's named *.ova but it's not an OVA file (tar file)
+        print(fmt.format(fName, fPath, fSize, fDate))
+    return 0
 
 
 def imgDelete(args):
-  imgName = option = None
-  if len(args) == 2:
-    (imgName, option) = args
-  elif len(args) == 1:
-    imgName = args[0]
-  else:
-    print("Usage: vm imgdel <imgName> [f]")
-    return 1
-  if option != "f": option = "normal"
-  imgFile = os.path.join(vmhome, imgName)
-  if not os.path.isfile(imgFile): 
-    print("Error: No such OVA file.")
-    return 1
-  if option == "normal": 
-    msg = "Delete image '{}'? y/n ".format(imgName)
-    response = raw_input(msg)
-    if response != "y":
-      return 1
-  os.remove(imgFile)  # Remove OVA file
-  return 0
+    imgName = option = None
+    if len(args) == 2:
+        (imgName, option) = args
+    elif len(args) == 1:
+        imgName = args[0]
+    else:
+        print("Usage: vm imgdel <imgName> [f]")
+        return 1
+    if option != "f": option = "normal"
+    imgFile = os.path.join(vmhome, imgName)
+    if not os.path.isfile(imgFile):
+        print("Error: No such OVA file.")
+        return 1
+    if option == "normal":
+        msg = "Delete image '{}'? y/n ".format(imgName)
+        response = raw_input(msg)
+        if response != "y":
+            return 1
+    os.remove(imgFile)  # Remove OVA file
+    return 0
 
 
 def imgImport(args):
-  if len(args) < 1 or len(args) > 1:
-    print("Usage: vm imgimp <imgFile>")
-    sys.exit(1)
-  imgFile = args[0]
-  if not os.path.isfile(imgFile): 
-    print("File '{}' does not exist".format(imgFile))
-    return 1
-  # Reject if no .ova extension, or if not a tar file (what OVAs really are)
-  if not imgFile.lower().endswith("ova") or not tarfile.is_tarfile(imgFile):
-    print("File '{}' lacks '.ova' extension, or it's not an OVA file.".format(imgFile))
-    return 1
-  targetFile = os.path.join(vmhome, os.path.basename(imgFile))
-  if os.path.isfile(targetFile): 
-    print("Image '{}' already exists".format(targetFile))
-    return 1
+    if len(args) < 1 or len(args) > 1:
+        print("Usage: vm imgimp <imgFile>")
+        sys.exit(1)
+    imgFile = args[0]
+    if not os.path.isfile(imgFile):
+        print("File '{}' does not exist".format(imgFile))
+        return 1
+    # Reject if no .ova extension, or if not a tar file (what OVAs really are)
+    if not imgFile.lower().endswith("ova") or not tarfile.is_tarfile(imgFile):
+        print("File '{}' lacks '.ova' extension, or it's not an OVA file.".format(imgFile))
+        return 1
+    targetFile = os.path.join(vmhome, os.path.basename(imgFile))
+    if os.path.isfile(targetFile):
+        print("Image '{}' already exists".format(targetFile))
+        return 1
 
-  # Reject image tar package if it doesn't have the right files
-  badOva = True
-  tar = tarfile.open(imgFile, "r")
-  for f in tar.getnames():
-    if f.lower().endswith(("vmdk","vdi","vhd", "ovf")):
-      badOva = False
-  tar.close()
-  if badOva:
-    print("Content of that OVA image file is not valid")
-    return 1
+    # Reject image tar package if it doesn't have the right files
+    badOva = True
+    tar = tarfile.open(imgFile, "r")
+    for f in tar.getnames():
+        if f.lower().endswith(("vmdk","vdi","vhd", "ovf")):
+            badOva = False
+    tar.close()
+    if badOva:
+        print("Content of that OVA image file is not valid")
+        return 1
 
-  # Copy the OVA to vmhome, where OVA image files are kept
-  shutil.copy(imgFile, vmhome)
-  return 0
+    # Copy the OVA to vmhome, where OVA image files are kept
+    shutil.copy(imgFile, vmhome)
+    return 0
 
 
 def imgCreate(args):
-  if len(args) < 2 or len(args) > 2:
-    print("{} imgcreate <imgName> <vmName>".format(prgName))
-    sys.exit(1)
-  (imgName, vmName) = args
-  if not imgName.lower().endswith('.ova'):
-    print("Image name must have an '.ova' extension.")
-    return 1
+    if len(args) < 2 or len(args) > 2:
+        print("{} imgcreate <imgName> <vmName>".format(prgName))
+        sys.exit(1)
+    (imgName, vmName) = args
+    if not imgName.lower().endswith('.ova'):
+        print("Image name must have an '.ova' extension.")
+        return 1
 
-  imgFile = os.path.join(vmhome, imgName)
-  if os.path.isfile(imgFile):
-    print("Image file {} already exists.".format(imgFile))
-    return 1
+    imgFile = os.path.join(vmhome, imgName)
+    if os.path.isfile(imgFile):
+        print("Image file {} already exists.".format(imgFile))
+        return 1
 
-  # Try getting existing IMachine object (read-only)
-  try:
-    vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-  except:
-    print("There is no existing VM named '{}'.".format(vmName))
-    return 1
+    # Try getting existing IMachine object (read-only)
+    try:
+        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
+    except:
+        print("There is no existing VM named '{}'.".format(vmName))
+        return 1
 
-  if vm.state == const.MachineState_Running:   
-    print("VM {} needs to be powered off for this".format(vmName))
-    return 1
+    if vm.state == const.MachineState_Running:
+        print("VM {} needs to be powered off for this".format(vmName))
+        return 1
 
-  # Create OVA = Create appliance and export VM to it
-  appliance = vbox.createAppliance()             # Create empty IAppliance object
-  sysDesc   = vm.exportTo(appliance, imgFile)  # Each call adds another VM to sysDesc list
+    # Create OVA = Create appliance and export VM to it
+    appliance = vbox.createAppliance()             # Create empty IAppliance object
+    sysDesc   = vm.exportTo(appliance, imgFile)  # Each call adds another VM to sysDesc list
 
-  # OPTIONAL: Could override any VirtualSystemDescriptionType values (see vmCreate for more info)
-  #sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
-  exportOptions = []  # Empty is typically better, but here are the ExportOptions
-                      # CreateManifest=1  ExportDVDImages=2  StripAllMACs=3  StripAllNonNATMACs=4
+    # OPTIONAL: Could override any VirtualSystemDescriptionType values (see vmCreate for more info)
+    #sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
+    exportOptions = []  # Empty is typically better, but here are the ExportOptions
+                        # CreateManifest=1  ExportDVDImages=2  StripAllMACs=3  StripAllNonNATMACs=4
 
-  # Export the appliance, creating OVA file, and get IProgress object
-  progress = appliance.write('ovf-2.0', exportOptions, imgFile)
-  print("Creating OVA image ...")
-  while not progress.completed:
-    time.sleep(0.2)
-  return 0
+    # Export the appliance, creating OVA file, and get IProgress object
+    progress = appliance.write('ovf-2.0', exportOptions, imgFile)
+    print("Creating OVA image ...")
+    while not progress.completed:
+        time.sleep(0.2)
+    return 0
 
 
 def imgPack():
-  print(
-    "To create a brand new OVA image from an ISO, first make sure you install\n"
-    "'git' and 'packer', then do the following:\n\n"
-    "1. git clone https://github.com/lencap/osimages\n"
-    "2. cd osimages. Then cd centos or ubuntu. Let say it's centos.\n"
-    "3. packer validate centos7.7.1908-vm-ova.json\n"
-    "4. packer build centos7.7.1908-vm-ova.json\n"
-    "5. {} imgimp output-virtualbox-iso/centos7.7.1908-vm.ova\n"
-    "6. {} imglist To confirm image is then available\n\n"
-    "You should be able to use any of the '*-vm*' packer templates, and of course\n"
-    "you can create your very own. Please review existing templates, and the\n"
-    "actual {} code to ensure your own images satisfy the essential requirements."
-    .format(prgName, prgName, prgName)
-  )
-  return 0
+    print(
+        "To create a brand new OVA image from an ISO, first make sure you install\n"
+        "'git' and 'packer', then do the following:\n\n"
+        "1. git clone https://github.com/lencap/osimages\n"
+        "2. Choose which Linux OS template to use, say Ubuntu, then\n"
+        "3. packer validate ubuntu1804.json\n"
+        "4. packer build ubuntu1804.json\n"
+        "5. {} imgimp output-virtualbox-iso/ubuntu1804.ova\n"
+        "6. {} imglist To confirm image is then available\n\n"
+        "You should be able to use any of the OVA packer templates, and of course\n"
+        "you can create your very own. Please review existing templates, and the\n"
+        "actual {} code to ensure your own images satisfy the essential requirements."
+        .format(prgName, prgName, prgName)
+    )
+    return 0
 
 
 def main(args=None):
-  if not os.path.isdir(vmhome):  # Ensure config directory exists
-    os.makedirs(vmhome)
+    if not os.path.isdir(vmhome):  # Ensure config directory exists
+        os.makedirs(vmhome)
 
-  CreateSSHKeys()   # Generate SSH keys on every run to ensure they're always readily available
-  
-  # Initialized VirtualBox. Note global variables
-  global vboxmgr, const, vbox, vbhome           # Declare global variables
-  vboxmgr = VirtualBoxManager(None, None)       # Init mgr with default style/parameters
-  const   = vboxmgr.constants                   # Constants handle
-  vbox    = vboxmgr.getVirtualBox()             # IVirtualBox handle
-  vbhome  = vbox.systemProperties.defaultMachineFolder
-  if int(vbox.APIVersion[0]) < 5:
-    print("Fatal. Requires VirtualBox v5.0 or greater.")
-    sys.exit(1)
+    CreateSSHKeys()   # Generate SSH keys on every run to ensure they're always readily available
 
-  # Parse arguments
-  # Python has no switch/case construct, so below 'action' switcher works around that.  
-  # Note how we shift argv by 2 when calling the functions, to reduce remaining arguments.
-  action = {
-    'list':       lambda: vmList(),
-    'create':     lambda: vmCreate(sys.argv[2:]),
-    'del':        lambda: vmDelete(sys.argv[2:]),
-    'start':      lambda: vmStart(sys.argv[2:]),
-    'stop':       lambda: vmStop(sys.argv[2:]),
-    'ssh':        lambda: vmSSH(sys.argv[2:]),
-    'prov':       lambda: vmProvision(sys.argv[2:]),
-    'info':       lambda: vmInfo(sys.argv[2:]),
-    'mod':        lambda: vmMod(sys.argv[2:]),
-    'ip':         lambda: vmIp(sys.argv[2:]),
-    'imglist':    lambda: imgList(),
-    'imgcreate':  lambda: imgCreate(sys.argv[2:]),
-    'imgpack':    lambda: imgPack(),
-    'imgdel':     lambda: imgDelete(sys.argv[2:]),
-    'imgimp':     lambda: imgImport(sys.argv[2:]),
-    'netlist':    lambda: netList(),
-    'netadd':     lambda: netAdd(sys.argv[2:]),
-    'netdel':     lambda: netDelete(sys.argv[2:]),
-    'usage':      lambda: Usage(),
-  }
+    # Initialized VirtualBox. Note global variables
+    global vboxmgr, const, vbox, vbhome           # Declare global variables
+    vboxmgr = VirtualBoxManager(None, None)       # Init mgr with default style/parameters
+    const   = vboxmgr.constants                   # Constants handle
+    vbox    = vboxmgr.getVirtualBox()             # IVirtualBox handle
+    vbhome  = vbox.systemProperties.defaultMachineFolder
+    if int(vbox.APIVersion[0]) < 5:
+        print("Fatal. Requires VirtualBox v5.0 or greater.")
+        sys.exit(1)
 
-  if len(sys.argv) < 2:
-    cmd = "usage"
-  else:
-    cmd = sys.argv[1]
+    # Parse arguments
+    # Python has no switch/case construct, so below 'action' switcher works around that.
+    # Note how we shift argv by 2 when calling the functions, to reduce remaining arguments.
+    action = {
+        'list':       lambda: vmList(),
+        'create':     lambda: vmCreate(sys.argv[2:]),
+        'del':        lambda: vmDelete(sys.argv[2:]),
+        'start':      lambda: vmStart(sys.argv[2:]),
+        'stop':       lambda: vmStop(sys.argv[2:]),
+        'ssh':        lambda: vmSSH(sys.argv[2:]),
+        'prov':       lambda: vmProvision(sys.argv[2:]),
+        'info':       lambda: vmInfo(sys.argv[2:]),
+        'mod':        lambda: vmMod(sys.argv[2:]),
+        'ip':         lambda: vmIp(sys.argv[2:]),
+        'imglist':    lambda: imgList(),
+        'imgcreate':  lambda: imgCreate(sys.argv[2:]),
+        'imgpack':    lambda: imgPack(),
+        'imgdel':     lambda: imgDelete(sys.argv[2:]),
+        'imgimp':     lambda: imgImport(sys.argv[2:]),
+        'nettype':    lambda: netType(sys.argv[2:]),
+        'netlist':    lambda: netList(),
+        'netadd':     lambda: netAdd(sys.argv[2:]),
+        'netdel':     lambda: netDelete(sys.argv[2:]),
+        'usage':      lambda: Usage(),
+    }
 
-  if cmd not in action:
-    print("Command '{}' is not available.".format(cmd))
-    sys.exit(1)
+    if len(sys.argv) < 2:
+        cmd = "usage"
+    else:
+        cmd = sys.argv[1]
 
-  # Run given command 
-  try:
-    action[cmd]()
-  except KeyboardInterrupt:
-    action['interrupt'] = True
-    print("Error: Keyboard interrupt")
-  except Exception as e:
-    print("Error: {}".format(str(e)))
-    traceback.print_exc()
+    if cmd not in action:
+        print("Command '{}' is not available.".format(cmd))
+        sys.exit(1)
 
-  # Clean up and exit    
-  del vboxmgr
-  sys.exit(0)
+    # Run given command
+    try:
+        action[cmd]()
+    except KeyboardInterrupt:
+        action['interrupt'] = True
+        print("Error: Keyboard interrupt")
+    except Exception as e:
+        print("Error: {}".format(str(e)))
+        traceback.print_exc()
+
+    # Clean up and exit
+    del vboxmgr
+    sys.exit(0)
 
 
 if __name__ == '__main__':
-  main()
+    main()
