@@ -20,7 +20,7 @@ except ImportError:
 
 
 # Global variables
-prgVer    = 'v2.6.2'
+prgVer    = 'v263'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -85,6 +85,9 @@ def CreateVMConf():
 
 
 def CreateSSHKeys():
+    if not os.path.isdir(vmhome):  # Ensure config directory exists
+        os.makedirs(vmhome)
+
     with open(vmsshpri, "w") as f:
         f.write("-----BEGIN RSA PRIVATE KEY-----\n"
                 "MIIEoQIBAAKCAQEAyIZo/WEpMT8006pKzqHKhNEAPITJCEWjLN+cGSg9snFXVljA\n"
@@ -175,9 +178,8 @@ def nextUniqueIP(ip):
     while usedIP(ip):
         ipNet = '.'.join(ip.split('.')[:3])     # Network address
         ip4th = str(int(ip.split('.')[3]) + 1)  # Add one to 4th octect
+        if int(ip4th) > 254: ip4th = "2"        # If it's greater than 254 restart at 2
         ip = ipNet + '.' + ip4th
-        if int(ip4th) > 254:                    # If it's greater than 254 restart at 2
-            ip = ipNet + '.' + str(int(2))        # Add one to 4th octect
     return ip
 
 
@@ -220,7 +222,7 @@ def setIP(vm, ip):
         nic1.enabled          = True
         nic1.adapterType      = const.all_values("NetworkAdapterType")['Virtio']
         nic1.attachmentType   = const.all_values("NetworkAttachmentType")["Bridged"]
-        nic1.bridgedInterface = getMainNIC()   # Find and use host's main NIC to bridge to
+        nic1.bridgedInterface = getHostMainNIC()   # Find and use host's main NIC to bridge to
     else:
         # For netType = HostOnly
         #   ENABLE enp0s3 w/ NAT networking       =  to access external world
@@ -229,7 +231,7 @@ def setIP(vm, ip):
         # If given IP address fits into an existing vboxnet network, then
         # put it in that vboxnet, else create a new vboxnet
         newHOName = newHOIP = None
-        for tmpHO in getNetList():
+        for tmpHO in getNICList():
             # Use existing HostOnly vboxnet network if it exists
             if tmpHO.interfaceType == 2 and ipNet == '.'.join(tmpHO.IPAddress.split('.')[:3]):
                 newHOName = tmpHO.name
@@ -272,13 +274,12 @@ def vmList():
     fmt = "{:34}{:<12}{:<5}{:<7}{:<12}{}"
     print(fmt.format('NAME', 'OS', 'CPU', 'MEM', 'STATE', 'SSH'))
     for vm in vbox.getMachines():
+        name = vm.name
+        if len(name) > 34:
+            name = name + ' '
         state = enumElem("MachineState", vm.state)
         ip = getIP(vm)
         sshConn = vmuser + "@" + ip   # vmuser is global
-        if len(vm.name) > 34:
-            name = name[:30] + '...'
-        else:
-            name = vm.name
         print(fmt.format(name, vm.OSTypeId, vm.CPUCount, vm.memorySize, state, sshConn))
 
 
@@ -474,10 +475,6 @@ def vmStop(args):
         vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
     except:
         print("VM '{}' doesn't exist".format(vmName))
-        return 1
-
-    if vm.state == const.MachineState_Aborted:
-        print("'Aborted' state is synonymous with 'PoweredOff' state")
         return 1
 
     if vm.state != const.MachineState_Running:
@@ -775,8 +772,8 @@ def vmInfo(args):
     return 0
 
 
-def getMainNIC():
-    nicList = getNetList()
+def getHostMainNIC():
+    nicList = getNICList()
     for nic in nicList:
         # Return first NIC name with valid IP address
         if nic.name[:2] != 'en':
@@ -787,7 +784,7 @@ def getMainNIC():
     return ''
 
 
-def getNetList():
+def getNICList():
     # Get list of Bridged and HostOnly networks defined on this host
     netList = []
     for nic in vbox.host.getNetworkInterfaces():
@@ -823,7 +820,7 @@ def netType(args):
 
 
 def netList():
-    netList = getNetList()
+    netList = getNICList()
     if len(netList) != 0:
         fmt = "{:24}{:12}{:12}{:16}{:16}{}"
         print(fmt.format("NAME", "TYPE", "DHCP", "IPADDRESS", "NETMASK", "STATUS"))
@@ -832,13 +829,13 @@ def netList():
             if net.DHCPEnabled:
                 dhcpStatus = 'Enabled'
             print(fmt.format(net.name, \
-                             enumElem("HostNetworkInterfaceType", net.interfaceType), \
-                             # HostNetworkInterfaceType  1=Bridged, 2=HostOnly
-                             dhcpStatus, \
-                             net.IPAddress, \
-                             net.networkMask, \
-                             enumElem("HostNetworkInterfaceStatus", net.status)))
-                             # HostNetworkInterfaceStatus 0=Unknown, 1=Up, 2=Down
+                enumElem("HostNetworkInterfaceType", net.interfaceType), \
+                # HostNetworkInterfaceType  1=Bridged, 2=HostOnly
+                dhcpStatus, \
+                net.IPAddress, \
+                net.networkMask, \
+                enumElem("HostNetworkInterfaceStatus", net.status)))
+                # HostNetworkInterfaceStatus 0=Unknown, 1=Up, 2=Down
     return 0
 
 
@@ -872,7 +869,7 @@ def netDelete(args):
         return 1
     vboxnetName = args[0]
     vboxnetDoesntExists = True
-    for net in getNetList():
+    for net in getNICList():
         if net.interfaceType == 2 and net.name == vboxnetName:    # Only for interfaceType 2 (HostOnly)
             vboxnetDoesntExists = False
             break
