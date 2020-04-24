@@ -30,7 +30,7 @@ Either `brew install lencap/tools/vm` or `make install`
 
 ## Usage
 ```
-Simple Linux VM Manager v2.6.2
+Simple Linux VM Manager v263
 vm list                                   List all VMs
 vm create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName
 vm del       <vmName> [f]                 Delete VM. Force option
