@@ -20,7 +20,7 @@ except ImportError:
 
 
 # Global variables
-prgVer    = 'v263'
+prgVer    = 'v264'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -28,6 +28,9 @@ vmsshpub  = vmhome + '/vmkey.pub'          # Public SSH key file
 vmconf    = 'vm.conf'                      # Provisioning filename
 vmdefip   = '10.11.12.2'                   # Default IP address
 vmuser    = 'vmuser'                       # Default user
+# StorageControllerType
+CtrlType = [ "Null", "LsiLogic", "BusLogic", "IntelAhci", "PIIX3",
+    "PIIX4", "ICH6", "I82078", "LsiLogicSas", "USB", "VNMe", "VirtioSCSI" ]
 
 
 def Usage():
@@ -675,22 +678,20 @@ def vmInfo(args):
     fmt = "{:40}  {}"
     print(fmt.format("Name", vmName))
     print(fmt.format("ID", vm.id))
-    print(fmt.format("OS_Type_ID", vm.OSTypeId))
-    print(fmt.format("CPUs", vm.CPUCount))
-    print(fmt.format("RAM(MB)", vm.memorySize))
-    print(fmt.format("MachineStatus", enumElem("MachineState", vm.state)))
     print(fmt.format("SessionStatus", enumElem("SessionState", vm.sessionState)))
 
-    for c in vboxmgr.getArray(vm, 'USBControllers'):
-        print(fmt.format("USB Controllers", 'type=' + c.type + ' ' + 'standard=' + c.USBStandard))
     storageControllers = vboxmgr.getArray(vm, 'storageControllers')
     if storageControllers:
         for c in storageControllers:
-            print(fmt.format("StorageControllers", c.name + ': bus=' + str(c.bus) + ' ' + 'type=' + enumElem("StorageControllerType", c.controllerType)))
+            print("%-40s  %-16s: bus=%u type=%s" %
+                ("StorageControllers", c.name, c.bus, CtrlType[c.controllerType]))
+
     attaches = vboxmgr.getArray(vm, 'mediumAttachments')
     if attaches:
         for a in attaches:
-            print(fmt.format("MEDIA", 'controller=' + a.controller + '   ' + 'port/dev=' + str(a.port) + ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
+            print(fmt.format("MEDIA",
+                'controller=' + a.controller + '   port/dev=' + str(a.port) +
+                ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
             medium = a.medium
             if a.type == const.DeviceType_HardDisk:
                 print(fmt.format("  ID", medium.id))
