@@ -2,6 +2,9 @@
 # vm
 # Simple Linux VM manager
 
+# @todo
+# - Move to python3 
+
 import os
 import sys
 import time
@@ -18,7 +21,6 @@ except ImportError:
     print("Missing 'vboxapi' module. Is VirtualBox installed?")
     sys.exit(1)
 
-
 # Global variables
 prgVer    = 'v264'
 prgName   = 'vm'
@@ -31,6 +33,9 @@ vmuser    = 'vmuser'                       # Default user
 # StorageControllerType
 CtrlType = [ "Null", "LsiLogic", "BusLogic", "IntelAhci", "PIIX3",
     "PIIX4", "ICH6", "I82078", "LsiLogicSas", "USB", "VNMe", "VirtioSCSI" ]
+# DeviceType
+DevType = [ "Null", "Foppy", "DVD", "HardDisk", "Network", "USB",
+    "SharedFolder", "Graphics3D" ]
 
 
 def Usage():
@@ -274,8 +279,8 @@ def setIP(vm, ip):
 def vmList():
     if len(vbox.getMachines()) == 0:
         return
-    fmt = "{:34}{:<12}{:<5}{:<7}{:<12}{}"
-    print(fmt.format('NAME', 'OS', 'CPU', 'MEM', 'STATE', 'SSH'))
+    print("%-34s%-16s%-5s%-7s%-12s%s" %
+        ("NAME", "OS", "CPU", "MEM", "STATE", "SSH"))
     for vm in vbox.getMachines():
         name = vm.name
         if len(name) > 34:
@@ -283,7 +288,8 @@ def vmList():
         state = enumElem("MachineState", vm.state)
         ip = getIP(vm)
         sshConn = vmuser + "@" + ip   # vmuser is global
-        print(fmt.format(name, vm.OSTypeId, vm.CPUCount, vm.memorySize, state, sshConn))
+        print("%-34s%-16s%-5s%-7s%-12s%s" %
+            (name, vm.OSTypeId, vm.CPUCount, vm.memorySize, state, sshConn))
 
 
 def vmCreate(args):
@@ -689,9 +695,8 @@ def vmInfo(args):
     attaches = vboxmgr.getArray(vm, 'mediumAttachments')
     if attaches:
         for a in attaches:
-            print(fmt.format("MEDIA",
-                'controller=' + a.controller + '   port/dev=' + str(a.port) +
-                ':' + str(a.device) + '   type=' + enumElem("DeviceType", a.type)))
+            print("%-40s  controller=%-16s: port/dev=%u/%u type=%s" %
+                ("MEDIA", a.controller, a.port, a.device, DevType[a.type]))
             medium = a.medium
             if a.type == const.DeviceType_HardDisk:
                 print(fmt.format("  ID", medium.id))
@@ -733,10 +738,11 @@ def vmInfo(args):
         print(fmt.format("    CableConnected", nic.cableConnected))
         print(fmt.format("    PromiscuousMode", enumElem("NetworkAdapterPromiscModePolicy", nic.promiscModePolicy)))
         if attachType == "Bridged":
-            print(fmt.format("    BridgedIF", nic.bridgedInterface))
+            print("    %-38s%s" % ("Bridged_Interface", nic.bridgedInterface))
         elif attachType == "HostOnly":
-            print(fmt.format("    HostOnlyIF", nic.hostOnlyInterface))
+            print("    %-38s%s" % ("HostOnly_Interface", nic.hostOnlyInterface))
         elif attachType == "NAT":
+            print("    %-38s%s" % ("NAT_Interface", "N/A"))
             if len(nic.NATEngine.getRedirects()) > 0:      # List any existing port-forward rules
                 print(fmt.format("    NATEngine", ''))
                 for pfRule in nic.NATEngine.getRedirects():
