@@ -3,12 +3,11 @@
 # Simple Linux VM manager
 
 # @todo
-# - move to python3
-# - no lambda in main
-# - more readable c printf c style
-# - simple list, no enumElem
-# - unless reqired, use " for strings, and ' for chars
-# 
+# Full switch to python3
+# More readable c printf c style
+# Use simple string lists intead of const enumElem
+# Unless required, use " for strings, and ' for chars
+# Setup keyboard interrupt handler
 
 import os
 import sys
