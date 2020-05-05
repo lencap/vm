@@ -3,7 +3,12 @@
 # Simple Linux VM manager
 
 # @todo
-# - Move to python3 
+# - move to python3
+# - no lambda in main
+# - more readable c printf c style
+# - simple list, no enumElem
+# - unless reqired, use " for strings, and ' for chars
+# 
 
 import os
 import sys
@@ -22,7 +27,7 @@ except ImportError:
     sys.exit(1)
 
 # Global variables
-prgVer    = 'v264'
+prgVer    = 'v265'
 prgName   = 'vm'
 vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
 vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
@@ -30,6 +35,11 @@ vmsshpub  = vmhome + '/vmkey.pub'          # Public SSH key file
 vmconf    = 'vm.conf'                      # Provisioning filename
 vmdefip   = '10.11.12.2'                   # Default IP address
 vmuser    = 'vmuser'                       # Default user
+vboxmgr   = None                           # IVirtualBoxClient handle
+const     = None                           # Constants handle
+vbox      = None                           # IVirtualBox handle
+vbhome    = None                           # VirtualBox home directory
+
 # StorageControllerType
 CtrlType = [ "Null", "LsiLogic", "BusLogic", "IntelAhci", "PIIX3",
     "PIIX4", "ICH6", "I82078", "LsiLogicSas", "USB", "VNMe", "VirtioSCSI" ]
@@ -38,7 +48,7 @@ DevType = [ "Null", "Foppy", "DVD", "HardDisk", "Network", "USB",
     "SharedFolder", "Graphics3D" ]
 
 
-def Usage():
+def PrintUsage():
     p = prgName
     print("Simple Linux VM Manager {}\n"
           "{} list                                   List all VMs\n"
@@ -61,7 +71,7 @@ def Usage():
           "{} netadd    <ip>                         Create new HostOnly network\n"
           "{} netdel    <vboxnetX>                   Delete given HostOnly network"
           .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
-    sys.exit(0)
+    Exit()
 
 
 def CreateVMConf():
@@ -1115,21 +1125,21 @@ def vmProvision(args):
 
 
 def imgList():
-    fList = []
+    fList = []  # Create a list of existing OVA filenames
     for f in os.listdir(vmhome):
         if f.lower().endswith(".ova"):
             fList.append(f)
-    if len(fList) < 1: return 1   # No OVA files to list, so return empty-handed
-    fmt = "{:<34}{:<54}{:<8}{}"
-    print(fmt.format('NAME', 'PATH', 'SIZE', 'DATE'))
+
+    # If no OVA files, return empty-handed
+    if len(fList) < 1: return 1
+
+    print("LOCATION: %s/" % (vmhome))
+    print("%-34s%-8s%s" % ("NAME", "SIZE", "DATE"))
     for fName in fList:
-        fPath = os.path.join(vmhome, fName)
-        fSize = str(os.path.getsize(fPath) >> 20) + 'MB'    # Note shift by 20 to get size in MB
-        fDate = time.strftime('%Y-%m-%d %H:%M', time.gmtime(os.path.getmtime(fPath)))
-        hddFile = '<undefined>'
-        if not tarfile.is_tarfile(fPath): continue          # It's named *.ova but it's not an OVA file (tar file)
-        print(fmt.format(fName, fPath, fSize, fDate))
-    return 0
+        fullPath = os.path.join(vmhome, fName)        
+        fSize = str(os.path.getsize(fullPath) >> 20) + "MB"   # Shift x 20 to get MBs
+        fDate = time.strftime("%Y-%m-%d %H:%M", time.gmtime(os.path.getmtime(fullPath)))
+        print("%-34s%-8s%s" % (fName, fSize, fDate))
 
 
 def imgDelete(args):
@@ -1248,70 +1258,73 @@ def imgPack():
     return 0
 
 
-def main(args=None):
-    if not os.path.isdir(vmhome):  # Ensure config directory exists
-        os.makedirs(vmhome)
+def InitGlobalObjects():
+    # Tell this function these are global variables we're initializing
+    global vboxmgr, const, vbox, vbhome 
 
-    CreateSSHKeys()   # Generate SSH keys on every run to ensure they're always readily available
-
-    # Initialized VirtualBox. Note global variables
-    global vboxmgr, const, vbox, vbhome           # Declare global variables
-    vboxmgr = VirtualBoxManager(None, None)       # Init mgr with default style/parameters
-    const   = vboxmgr.constants                   # Constants handle
-    vbox    = vboxmgr.getVirtualBox()             # IVirtualBox handle
+    vboxmgr = VirtualBoxManager(None, None)
+    const   = vboxmgr.constants
+    vbox    = vboxmgr.getVirtualBox()
     vbhome  = vbox.systemProperties.defaultMachineFolder
     if int(vbox.APIVersion[0]) < 5:
         print("Fatal. Requires VirtualBox v5.0 or greater.")
         sys.exit(1)
 
-    # Parse arguments
-    # Python has no switch/case construct, so below 'action' switcher works around that.
-    # Note how we shift argv by 2 when calling the functions, to reduce remaining arguments.
-    action = {
-        'list':       lambda: vmList(),
-        'create':     lambda: vmCreate(sys.argv[2:]),
-        'del':        lambda: vmDelete(sys.argv[2:]),
-        'start':      lambda: vmStart(sys.argv[2:]),
-        'stop':       lambda: vmStop(sys.argv[2:]),
-        'ssh':        lambda: vmSSH(sys.argv[2:]),
-        'prov':       lambda: vmProvision(sys.argv[2:]),
-        'info':       lambda: vmInfo(sys.argv[2:]),
-        'mod':        lambda: vmMod(sys.argv[2:]),
-        'ip':         lambda: vmIp(sys.argv[2:]),
-        'imglist':    lambda: imgList(),
-        'imgcreate':  lambda: imgCreate(sys.argv[2:]),
-        'imgpack':    lambda: imgPack(),
-        'imgdel':     lambda: imgDelete(sys.argv[2:]),
-        'imgimp':     lambda: imgImport(sys.argv[2:]),
-        'nettype':    lambda: netType(sys.argv[2:]),
-        'netlist':    lambda: netList(),
-        'netadd':     lambda: netAdd(sys.argv[2:]),
-        'netdel':     lambda: netDelete(sys.argv[2:]),
-        'usage':      lambda: Usage(),
-    }
 
-    if len(sys.argv) < 2:
-        cmd = "usage"
-    else:
-        cmd = sys.argv[1]
+def Exit(rc=0):
+    global vboxmgr
+    if (vboxmgr): del vboxmgr      # Release global object
+    sys.exit(rc)
 
-    if cmd not in action:
-        print("Command '{}' is not available.".format(cmd))
-        sys.exit(1)
 
-    # Run given command
-    try:
-        action[cmd]()
-    except KeyboardInterrupt:
-        action['interrupt'] = True
-        print("Error: Keyboard interrupt")
-    except Exception as e:
-        print("Error: {}".format(str(e)))
-        traceback.print_exc()
+def main(args=None):
+    # If less than 2 arguments just print usage (exits)
+    if len(sys.argv) < 2: PrintUsage()
 
-    # Clean up and exit
-    del vboxmgr
-    sys.exit(0)
+    # Initialize global objects: vboxclient, box, sysprop, vbhome, and vmhome
+    InitGlobalObjects()
+
+    # Create SSH keys on every run to ensure they're always readily available
+    CreateSSHKeys()
+
+    # Process 1st argument as an action verb
+    verb = sys.argv[1]
+
+    # Shift arguments by 2, to simplify calling target functions
+    args = sys.argv[2:]
+
+    if verb == "list":        vmList()
+    elif verb == "create":    vmCreate()
+    elif verb == "del":       vmDelete(args)
+    elif verb == "start":     vmStart(args)
+    elif verb == "stop":      vmStop(args)
+    elif verb == "ssh":       vmSSH(args)
+    elif verb == "prov":      vmProvision(args)
+    elif verb == "info":      vmInfo(args)
+    elif verb == "mod":       vmMod(args)
+    elif verb == "ip":        vmIp(args)
+    elif verb == "imglist":   imgList()
+    elif verb == "imgcreate": imgCreate(args)
+    elif verb == "imgpack":   imgPack()
+    elif verb == "imgdel":    imgDelete(args)
+    elif verb == "imgimp":    imgImport(args)
+    elif verb == "nettype":   netType(args)
+    elif verb == "netlist":   netList()
+    elif verb == "netadd":    netAdd(args)
+    elif verb == "netdel":    netDelete(args)
+    else: PrintUsage()
+
+    # Setup keyboard interrupt handler?
+    # try:
+    #     action[cmd]()
+    # except KeyboardInterrupt:
+    #     action['interrupt'] = True
+    #     print("Error: Keyboard interrupt")
+    # except Exception as e:
+    #     print("Error: {}".format(str(e)))
+    #     traceback.print_exc()
+
+    Exit()
 
 
 if __name__ == '__main__':

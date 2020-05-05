@@ -1,5 +1,5 @@
 TARGET  := vm
-VERSION := 264
+VERSION := 265
 
 .PHONY: default release install clean
 
