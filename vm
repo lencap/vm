@@ -49,27 +49,27 @@ DevType = [ "Null", "Foppy", "DVD", "HardDisk", "Network", "USB",
 
 def PrintUsage():
     p = prgName
-    print("Simple Linux VM Manager {}\n"
-          "{} list                                   List all VMs\n"
-          "{} create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName\n"
-          "{} del       <vmName> [f]                 Delete VM. Force option\n"
-          "{} start     <vmName> [g]                 Start VM. GUI option\n"
-          "{} stop      <vmName> [f]                 Stop VM. Force option\n"
-          "{} ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
-          "{} prov      [<vmConf>|c]                 Provision VM(s) in vm.conf, or optional given file; Create skeleton file option\n"
-          "{} info      <vmName>                     Dump subset of all VM details for common troubleshooting\n"
-          "{} mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
-          "{} ip        <vmName> <ip>                Set VM IP address\n"
-          "{} imglist                                List all available images\n"
-          "{} imgcreate <imgName> <vmName>           Create imgName from existing VM\n"
-          "{} imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
-          "{} imgimp    <imgFile>                    Import image. Make available to this program\n"
-          "{} imgdel    <imgName> [f]                Delete image. Force option\n"
-          "{} nettype   <vmName> <ho[bri]>           Set NIC type to Bridge as option; default is always HostOnly\n"
-          "{} netlist                                List available HostOnly networks\n"
-          "{} netadd    <ip>                         Create new HostOnly network\n"
-          "{} netdel    <vboxnetX>                   Delete given HostOnly network"
-          .format(prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+    print("Simple Linux VM Manager %s\n"
+          "%s list                                   List all VMs\n"
+          "%s create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName\n"
+          "%s del       <vmName> [f]                 Delete VM. Force option\n"
+          "%s start     <vmName> [g]                 Start VM. GUI option\n"
+          "%s stop      <vmName> [f]                 Stop VM. Force option\n"
+          "%s ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
+          "%s prov      [<vmConf>|c]                 Provision VMs in given vmConf file; Create skeleton file option\n"
+          "%s info      <vmName>                     Dump subset of all VM details for common troubleshooting\n"
+          "%s mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
+          "%s ip        <vmName> <ip>                Set VM IP address\n"
+          "%s imglist                                List all available images\n"
+          "%s imgcreate <imgName> <vmName>           Create imgName from existing VM\n"
+          "%s imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
+          "%s imgimp    <imgFile>                    Import image. Make available to this program\n"
+          "%s imgdel    <imgName> [f]                Delete image. Force option\n"
+          "%s nettype   <vmName> <ho[bri]>           Set NIC type to Bridge as option; default is always HostOnly\n"
+          "%s netlist                                List available HostOnly networks\n"
+          "%s netadd    <ip>                         Create new HostOnly network\n"
+          "%s netdel    <vboxnetX>                   Delete given HostOnly network"
+          % (prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
     Exit()
 
 
