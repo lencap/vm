@@ -1286,31 +1286,31 @@ def main(args=None):
     # Create SSH keys on every run to ensure they're always readily available
     CreateSSHKeys()
 
-    # Use 1st argument as the action verb
-    verb = sys.argv[1]
+    # Use 2nd argument as the action command (1st arg is always executable)
+    command = sys.argv[1]
 
     # Shift arguments by 2, for better readability
     args = sys.argv[2:]
 
-    if verb == "list":        vmList()
-    elif verb == "create":    vmCreate()
-    elif verb == "del":       vmDelete(args)
-    elif verb == "start":     vmStart(args)
-    elif verb == "stop":      vmStop(args)
-    elif verb == "ssh":       vmSSH(args)
-    elif verb == "prov":      vmProvision(args)
-    elif verb == "info":      vmInfo(args)
-    elif verb == "mod":       vmMod(args)
-    elif verb == "ip":        vmIp(args)
-    elif verb == "imglist":   imgList()
-    elif verb == "imgcreate": imgCreate(args)
-    elif verb == "imgpack":   imgPack()
-    elif verb == "imgdel":    imgDelete(args)
-    elif verb == "imgimp":    imgImport(args)
-    elif verb == "nettype":   netType(args)
-    elif verb == "netlist":   netList()
-    elif verb == "netadd":    netAdd(args)
-    elif verb == "netdel":    netDelete(args)
+    if command == "list":        vmList()
+    elif command == "create":    vmCreate()
+    elif command == "del":       vmDelete(args)
+    elif command == "start":     vmStart(args)
+    elif command == "stop":      vmStop(args)
+    elif command == "ssh":       vmSSH(args)
+    elif command == "prov":      vmProvision(args)
+    elif command == "info":      vmInfo(args)
+    elif command == "mod":       vmMod(args)
+    elif command == "ip":        vmIp(args)
+    elif command == "imglist":   imgList()
+    elif command == "imgcreate": imgCreate(args)
+    elif command == "imgpack":   imgPack()
+    elif command == "imgdel":    imgDelete(args)
+    elif command == "imgimp":    imgImport(args)
+    elif command == "nettype":   netType(args)
+    elif command == "netlist":   netList()
+    elif command == "netadd":    netAdd(args)
+    elif command == "netdel":    netDelete(args)
     else: PrintUsage()
 
     # Setup keyboard interrupt handler?
