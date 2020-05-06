@@ -1,32 +1,33 @@
 # VM
-A simple utility to manage [VirtualBox](https://www.virtualbox.org/) Linux VMs from the command line. This `vm` utility is similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html) utility, but far simpler. It manages __only__ Linux VMs, and only on __macOS__.
+A small [VirtualBox](https://www.virtualbox.org/) front-end utility to manage Linux VMs on __macOS__.
 
-## Todo
-- Allow easy switching/update of username and ssh key
-- Allow direct file transfer
-- Allow multiple vmcopy and vmrun
-- Document the code a little better
+It's similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but limited to only those functions I find myself needing 99% of time when I'm working with VirtualBox Linux VMs. In addition, it allows the automated provisioning of one or multiple VMs, like a poor-man and much more destitute Vagrant :-)
+
+Some things to keep in mind:
+
+- Again, __only__ Linux VMs, and only on __macOS__
+- Still a work in progress, so expect to resolve some issues by manually hopping back on the VirtualBox GUI
+- Constructive comments and suggestions are always welcome
 
 ## Prerequisites
-* Virtual machines created and managed by this utility __must__ be based on OVA files created from repo https://github.com/lencap/osimages. Run `vm imgpack` for how to create them. 
-* Tested on macOS v10.15.4 with VirtualBox v6.1.2
+* Virtual machines created and managed by this utility __must__ be based on OVA files created by using repo https://github.com/lencap/osimages. Run `vm imgpack` for some information on how to do that. 
+* Tested on macOS v10.15.4 with VirtualBox v6.1.6
 
 ## Provisioning VMs
 The `vm prov` command provisions VMs automatically based on a simple configuration file.
 
-You can create as sample skeleton config file by running `vm prov c`. This default file will be named `vm.conf`, which the `vm prov` command will read and follow to provision things accordingly.
-
-Alternatively, you can rename the file as you wish, to have multiple of these provisioning config files in your repo, which you can then provision as `vm prov myprov.conf`, and so on.
+You can create a sample skeleton config file by running `vm prov c`. By default, this file will be named `vm.conf`, which the `vm prov` command will read and follow to provision things accordingly. But you can name the file whatever you wish, so you can then have multiple of these provisioning config files in your repo, which you can then provision as `vm prov myprov1.conf`, and so on.
 
 ## Networking Modes
-You can set up VMs with in different types of networking modes; either the default __HostOnly__ mode, or the optional __Bridged__ mode.
+Two networking modes are supported: The default __HostOnly__ mode, or the optional and experimental __Bridged__ mode.
 
-HostOnly networking, as used in most local VM configurations, sets up NIC1 as NAT for external traffic, and NIC2 as HostOnly for intra-VM traffic.
+HostOnly networking, as used in most local VM configurations, sets up NIC1 as NAT for external traffic, and NIC2 as HostOnly for intra-VM traffic. This is usually the most popular mode, as it allows one to set up a mini network of VMs for whatever work one is doing.  
 
-Bridged networking allows you to use a local LAN, static IP address, and host a service on your host machine. __IMPORTANT__: For this to work 1) you need local host __administrator privileges__, and 2) be allowed to assign STATIC IP ADDRESSES on your local network.
+Bridged networking allows one use the local LAN, with a static IP address for each VM, all running from your own host machine. This option allows others on the same LAN to access services running on your VMs. __IMPORTANT__: For this to work A) you need local host __administrator privileges__, and B) you need to be allowed to assign STATIC IP ADDRESSES on your local network. This mode is not as popular, but can be useful in some unique settings.
 
-## Installation
-Either `brew install lencap/tools/vm` or `make install`
+## Installation Options
+- Do `brew install lencap/tools/vm` to easily use the latest published release
+- Do `make install` to place `vm` under `/usr/local/bin/`
 
 ## Usage
 ```
@@ -37,7 +38,7 @@ vm del       <vmName> [f]                 Delete VM. Force option
 vm start     <vmName> [g]                 Start VM. GUI option
 vm stop      <vmName> [f]                 Stop VM. Force option
 vm ssh       <vmName> [<command>]         SSH into or optionally run command on VM
-vm prov      [<vmConf>|c]                 Provision VM(s) in vm.conf, or optional given file; Create skeleton file option
+vm prov      [<vmConf>|c]                 Provision VMs in vm.conf, or optional given file; Create skeleton file option
 vm info      <vmName>                     Dump subset of all VM details for common troubleshooting
 vm mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024
 vm ip        <vmName> <ip>                Set VM IP address
