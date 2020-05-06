@@ -43,6 +43,8 @@ const     = None                           # Constants handle
 vbox      = None                           # IVirtualBox handle
 vbhome    = None                           # VirtualBox home directory
 
+# These constants of the enum types are a bit repetitive, but they make
+# things so much more clearer
 # StorageControllerType
 CtrlType = [ "Null", "LsiLogic", "BusLogic", "IntelAhci", "PIIX3",
     "PIIX4", "ICH6", "I82078", "LsiLogicSas", "USB", "VNMe", "VirtioSCSI" ]
