@@ -3,6 +3,10 @@
 # Simple Linux VM manager
 
 # @todo
+# Allow easy switching/update of username and ssh key
+# Allow direct file transfer between VMs
+# Allow multiple vmcopy and vmrun
+# Document the code a little better
 # Full switch to python3
 # More readable c printf c style
 # Use simple string lists intead of const enumElem
