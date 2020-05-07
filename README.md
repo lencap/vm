@@ -26,8 +26,8 @@ HostOnly networking, as used in most local VM configurations, sets up NIC1 as NA
 Bridged networking allows one use the local LAN, with a static IP address for each VM, all running from your own host machine. This option allows others on the same LAN to access services running on your VMs. __IMPORTANT__: For this to work A) you need local host __administrator privileges__, and B) you need to be allowed to assign STATIC IP ADDRESSES on your local network. This mode is not as popular, but can be useful in some unique settings.
 
 ## Installation Options
-- Do `brew install lencap/tools/vm` to easily use the latest published release
-- Do `make install` to place `vm` under `/usr/local/bin/`
+- `brew install lencap/tools/vm` to use latest Homebrew release
+- `make install` to place `vm` under `/usr/local/bin/`
 
 ## Usage
 ```
