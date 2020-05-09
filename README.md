@@ -3,7 +3,7 @@ A small [VirtualBox](https://www.virtualbox.org/) front-end utility to manage Li
 
 It's similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but limited to only those functions I find myself needing 99% of the time when I'm working with Linux VMs. In addition, it allows the automated provisioning of one or multiple VMs, like a poor-man and much more destitute Vagrant 😀
 
-Some things to keep in mind:
+Things to keep in mind:
 
 - Again, __only__ Linux VMs, and only on __macOS__
 - Still a work in progress, so expect to resolve some issues by manually hopping back on the VirtualBox GUI
