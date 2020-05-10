@@ -3,6 +3,7 @@
 # Simple Linux VM manager
 
 # @todo
+# Much to optimize and do better
 # Allow easy switching/update of username and ssh key
 # Allow direct file transfer between VMs
 # Allow multiple vmcopy and vmrun
@@ -356,8 +357,8 @@ def vmCreate(args):
             # 22 = USBController           23 = SoundCard              24 = SettingsFile
     refs = descList[1]               # 2nd list is 'refs' use by some descriptions
     OVFValues = descList[2]          # 3rd list is original 'OVFValues' saved in the OVF
-    VBoxValues = descList[3]         # 4th list is 'VBoxValues' suggestions for new VMs to be created with this OVF
-    extraConfigValues = descList[4]  # 5th list is 'extraConfigValues' for additional configs for each entry
+    VBoxValues = descList[3]         # 4th list is 'VBoxValues' suggestions for new VMs
+    extraConfigValues = descList[4]  # 5th list is 'extraConfigValues' for each entry
     enableValue = [True] * (dCount)  # Create/init boolean list assuming all items will remain enabled
 
     # Note: The index in each list corresponds to values for that specific description. so
@@ -365,12 +366,20 @@ def vmCreate(args):
     # VBoxValues[2]. The most important value for each description is whether or not it is
     # enabled, which is held in list enableValue[]
 
-    # Now let's import all resources defined in the OVA
-    # Always create VM with: 1 HDD, 1 cpu, 1GB RAM, and 2 NICS (NAT & HostOnly)
 
+    # Now let's import all resources defined in the OVA
+
+    # Update the lists to always create VM with: 1 HDD, 1 cpu, 1GB RAM, and 2 NICs
     for i in range(dCount):
-        if types[i] in [14, 16, 17, 19, 20, 22, 23]:
-            # Disable USB(22), Sound Card (23), and other virtual hardware that are not really used/needed
+        if types[i] in [14, 16, 19, 20, 22, 23]:
+            # Here we're disabling ALMOST all virtual hardware types that we're allow to disable,
+            # because they are hardly ever used in most VM configurations used for development:
+            #   HardDiskControllerIDE (14)
+            #   HardDiskControllerSCSI (16)
+            #   Floppy (19)
+            #   CDROM (20)
+            #   USBController (22)
+            #   SoundCard (23)
             enableValue[i] = False
             continue
 
@@ -1221,11 +1230,11 @@ def imgCreate(args):
     try:
         vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
     except:
-        print("There is no existing VM named '{}'.".format(vmName))
+        print("There is no VM named '%s'." % (vmName))
         return 1
 
     if vm.state == const.MachineState_Running:
-        print("VM {} needs to be powered off for this".format(vmName))
+        print("VM %s needs to be powered off for this" % (vmName))
         return 1
 
     # Create OVA = Create appliance and export VM to it
@@ -1234,6 +1243,7 @@ def imgCreate(args):
 
     # OPTIONAL: Could override any VirtualSystemDescriptionType values (see vmCreate for more info)
     #sysDesc[0].setFinalValues(enableValue, VBoxValues, extraConfigValues)
+
     exportOptions = []  # Empty is typically better, but here are the ExportOptions
                         # CreateManifest=1  ExportDVDImages=2  StripAllMACs=3  StripAllNonNATMACs=4
 
@@ -1299,7 +1309,7 @@ def main(args=None):
     args = sys.argv[2:]
 
     if command == "list":        vmList()
-    elif command == "create":    vmCreate()
+    elif command == "create":    vmCreate(args)
     elif command == "del":       vmDelete(args)
     elif command == "start":     vmStart(args)
     elif command == "stop":      vmStop(args)
