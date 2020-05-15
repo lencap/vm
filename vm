@@ -13,6 +13,9 @@
 # Use simple string lists intead of const enumElem
 # Unless required, use " for strings, and ' for chars
 # Setup keyboard interrupt handler
+# vmcreate func: nextunique IP part, at end, as per vmcreate.c
+# Update vmcreate comments, based on vmcreate.c 
+# Switch to Exit()
 
 import os
 import sys
