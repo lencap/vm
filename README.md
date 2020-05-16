@@ -1,5 +1,5 @@
 # VM
-A small [VirtualBox](https://www.virtualbox.org/) front-end utility to manage Linux VMs on __macOS__.
+A small [VirtualBox](https://www.virtualbox.org/) command line front-end utility to manage Linux VMs on __macOS__.
 
 It's similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but limited to only those functions I find myself needing 99% of the time when I'm working with Linux VMs. In addition, it allows the automated provisioning of one or multiple VMs, like a poor-man and much more destitute Vagrant 😀
 
