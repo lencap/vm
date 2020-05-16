@@ -31,14 +31,15 @@ Bridged networking allows one use the local LAN, with a static IP address for ea
 
 ## Usage
 ```
-Simple Linux VM Manager v263
+$vm
+Simple Linux VM Manager v265
 vm list                                   List all VMs
 vm create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName
 vm del       <vmName> [f]                 Delete VM. Force option
 vm start     <vmName> [g]                 Start VM. GUI option
 vm stop      <vmName> [f]                 Stop VM. Force option
 vm ssh       <vmName> [<command>]         SSH into or optionally run command on VM
-vm prov      [<vmConf>|c]                 Provision VMs in vm.conf, or optional given file; Create skeleton file option
+vm prov      [<vmConf>|c]                 Provision VMs in given vmConf file; Create skeleton file option
 vm info      <vmName>                     Dump subset of all VM details for common troubleshooting
 vm mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024
 vm ip        <vmName> <ip>                Set VM IP address
