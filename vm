@@ -1027,7 +1027,7 @@ def vmProvision(args):
         # defined in  vmconf. If it's configured differently, then we'll stop it, modify it, then
         # restart it. If the VM doesn't exist then the process is to simply create a new one
 
-        # Get the 6 possible config entries for this VM
+        # Get the 8 possible config entries for this VM
 
         vmName = sect                            # 1 name (Mandatory). Same as the section name
 
