@@ -11,7 +11,7 @@ Things to keep in mind:
 - Constructive comments and suggestions are always welcome
 
 ## Prerequisites
-* Virtual machines created and managed by this utility __must__ be based on OVA files created by using repo https://github.com/lencap/osimages. Run `vm imgpack` for some information on how to do that. 
+* Virtual machines created and managed by this utility __must__ be based on OVA files created by using repo https://github.com/lencap/osimages. Run `vm imgpack` for more information on how to do that. 
 * Tested on macOS v10.15.4 with VirtualBox v6.1.6
 
 ## Provisioning VMs
