@@ -7,6 +7,7 @@ Things to keep in mind:
 
 - Again, __only__ Linux VMs, and only on __macOS__
 - Still a work in progress, so expect to resolve some issues by manually hopping back on the VirtualBox GUI
+- The prime driver with functionality and code is the KISS principle
 - Constructive comments and suggestions are always welcome
 
 ## Prerequisites
