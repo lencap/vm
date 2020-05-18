@@ -1,7 +1,7 @@
 # VM
 A small command line [VirtualBox](https://www.virtualbox.org/) front-end utility to manage Linux VMs on __macOS__.
 
-It's similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but limited to only those functions I find myself needing 99% of the time when I'm working with Linux VMs. In addition, it allows the automated provisioning of one or multiple VMs, like a poor-man and much more destitute Vagrant 😀
+It's similar to VirtualBox's own [`VBoxManage`](https://www.virtualbox.org/manual/ch08.html), but limited to only those functions I find myself needing 99% of the time when I'm working with Linux VMs. In addition, it allows the automated provisioning of one or multiple VMs, like a poor-man's Vagrant (a much more destitute one 😀).
 
 Things to keep in mind:
 
@@ -26,7 +26,8 @@ HostOnly networking, as used in most local VM configurations, sets up NIC1 as NA
 Bridged networking allows one use the local LAN, with a static IP address for each VM, all running from your own host machine. This option allows others on the same LAN to access services running on your VMs. __IMPORTANT__: For this to work A) you need local host __administrator privileges__, and B) you need to be allowed to assign STATIC IP ADDRESSES on your local network. This mode is not as popular, but can be useful in some unique settings.
 
 ## Installation Options
-- `brew install lencap/tools/vm` to use latest Homebrew release
+There are two install options:
+- `brew install lencap/tools/vm` to use latest Homebrew release, or ...
 - `make install` to place `vm` under `/usr/local/bin/`
 
 ## Usage
