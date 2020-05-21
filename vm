@@ -4,20 +4,17 @@
 
 # @todo
 # Setup keyboard interrupt handler
-# Allow easy switching/update of username and ssh key
+# Allow easy switching/update of vmuser username, password, and ssh keys
 # Allow direct file transfer between VMs
 # Allow multiple vmcopy and vmrun
 # Don't mess with VMs that were not created by this program
-# Switch to python3, when VBox supports it
-
-# vmcreate func: nextunique IP part, at end, as per vmcreate.c
-# Update vmcreate comments, based on vmcreate.c 
+# Don't allow creation of HO net with any existing host net
+# Switch to python3 when VirtualBox supports it
 
 import os
 import sys
 import time
 import shutil
-import socket
 import subprocess
 import tarfile
 import traceback
@@ -30,7 +27,7 @@ except ImportError:
     Exit(1)
 
 # Global variables
-prgVer    = "v265"
+prgVer    = "v266"
 prgName   = "vm"
 vmhome    = os.environ["HOME"] + "/.vm"    # Config directory
 vmsshpri  = vmhome + "/vmkey"              # Private SSH key file
@@ -68,10 +65,9 @@ NICattType = [ "Null", "NAT", "Bridged", "Internal", "HostOnly",
 # NetworkAdapterPromiscModePolicy
 PromiscMode = [ "Undefined", "Deny", "AllowNetwork", "AllowAll" ]
 # HostNetworkInterfaceType
-NICifType = { "Null", "Bridged", "HostOnly" }
+NICifType = [ "Null", "Bridged", "HostOnly" ]
 # HostNetworkInterfaceStatus
-NICStatus = { "Unknown", "Up", "Down" }
-
+NICStatus = [ "Unknown", "Up", "Down" ]
 
 
 def PrintUsage():
@@ -164,7 +160,7 @@ def CreateVMConf():
     os.chmod(vmconf, 0o644)
 
 
-def openSession(vm, lockType):
+def OpenSession(vm, lockType):
     # Give last session 5 sec to close
     timeOut = time.time() + 5
     while timeOut > time.time() and vm.sessionState != const.SessionState_Unlocked:
@@ -180,14 +176,14 @@ def openSession(vm, lockType):
 
 
 # Save all settings and unlock session
-def closeSession(session):
+def CloseSession(session):
     session.machine.saveSettings()
     session.unlockMachine()
     return 0
 
 
 # Get network type as defined in official store location for this program
-def getNetType(vm):
+def GetNetType(vm):
     netType = vm.getGuestPropertyValue("/vm/nettype")
     if netType == '' or netType == None:
         # Default to it being HostOnly
@@ -196,7 +192,7 @@ def getNetType(vm):
 
 
 # Get IP address as defined in official store location for this program
-def getIP(vm):
+def GetIP(vm):
     ip = vm.getGuestPropertyValue('/vm/ip')
     if ip == '' or ip == None:
         # Default to it being undefined
@@ -204,23 +200,18 @@ def getIP(vm):
     return ip
 
 
-def usedIP(ip):
+def UsedIP(ip):
     # Check if IP is defined as belonging to an existing VM
     for vm in vbox.getMachines():
-        if getIP(vm) == ip:
+        if GetIP(vm) == ip:
             return True
 
-    # Check if IP is active
-    # Send 1 packet and wait 300 milliseconds for a reply
-    # A non-zero value return means the IP is NOT alive, and probably not used
-    IPNotInUse = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
-    if IPNotInUse:
-        return False
-    return False
+    # FUTURE OPTION: Check if IP could also be in use by something other than one our VMs    
+    # DISABLED: See IPNotInUse comments in SSHPortOpen
 
 
-def nextUniqueIP(ip):
-    while usedIP(ip):
+def NextUniqueIP(ip):
+    while UsedIP(ip):
         ipNet = '.'.join(ip.split('.')[:3])     # Network address
         ip4th = str(int(ip.split('.')[3]) + 1)  # Add one to 4th octect
         if int(ip4th) > 254: ip4th = "2"        # If it's greater than 254 restart at 2
@@ -228,18 +219,20 @@ def nextUniqueIP(ip):
     return ip
 
 
-def invalidIP(ip):
-    octects = ip.split('.')
-    if len(octects) != 4: return True
-    for x in octects:
-        if not x.isdigit(): return True
-        if int(x) > 255: return True
-    return False
+# Check if it's a valid IP address string
+def ValidIPStr(ip):
+    import socket
+    # Ask the socket module. It will know
+    try:
+        socket.inet_aton(ip)  # IP format is legal
+        return True
+    except socket.error:      # Not legal
+        return False
 
 
-def setIP(vm, ip):
+def SetIP(vm, ip):
     # Set up network devices and store IP in official location
-    if invalidIP(ip):
+    if not ValidIPStr(ip):
         print("IP address '{}' is invalid".format(ip))
         return False
 
@@ -254,9 +247,9 @@ def setIP(vm, ip):
         print("IP ending in .1 is reserved for the vboxnet gateway itself")
         return False
 
-    (vmMuta, session) = openSession(vm, const.LockType_Write)  # Get read/write handle on VM object
+    (vmMuta, session) = OpenSession(vm, const.LockType_Write)  # Get read/write handle on VM object
 
-    netType = getNetType(vm)
+    netType = GetNetType(vm)
     if netType == 'bri':
         # If netType = Bridged
         # DISABLE enp0s3 w/ Null               =  No networking
@@ -267,7 +260,7 @@ def setIP(vm, ip):
         nic1.enabled          = True
         nic1.adapterType      = const.all_values("NetworkAdapterType")['Virtio']
         nic1.attachmentType   = const.all_values("NetworkAttachmentType")["Bridged"]
-        nic1.bridgedInterface = getHostMainNIC()   # Find and use host's main NIC to bridge to
+        nic1.bridgedInterface = GetHostMainNIC()   # Find and use host's main NIC to bridge to
     else:
         # For netType = HostOnly
         #   ENABLE enp0s3 w/ NAT networking       =  to access external world
@@ -276,7 +269,7 @@ def setIP(vm, ip):
         # If given IP address fits into an existing vboxnet network, then
         # put it in that vboxnet, else create a new vboxnet
         newHOName = newHOIP = None
-        for tmpHO in getNICList():
+        for tmpHO in GetNICList():
             # Use existing HostOnly vboxnet network if it exists
             if tmpHO.interfaceType == 2 and ipNet == '.'.join(tmpHO.IPAddress.split('.')[:3]):
                 newHOName = tmpHO.name
@@ -309,7 +302,7 @@ def setIP(vm, ip):
     vmMuta.setGuestPropertyValue("/vm/ip", ip)
     vmMuta.setGuestPropertyValue("/vm/netmask",   "255.255.255.0")
     vmMuta.setGuestPropertyValue("/vm/broadcast", ".".join(ip.split(".")[:3]) + ".255")
-    closeSession(session)
+    CloseSession(session)
     return True
 
 
@@ -335,72 +328,100 @@ def vmCreate(args):
         return 1
     (vmName, imgName) = args
 
+    # Ensure VM doesn't already exist
     try:
-        vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
-        print("VM '{}' already exist".format(vmName))
+        vm = vbox.findMachine(vmName)
+        print("There's already a VM registered as '%s'" % (vmName))
         return 1
     except:
-        pass   # ... let' continue creating VM
+        pass   # ... continue, to create VM
 
-    imgFile       = imgName                        # To see if it's a file (hopefully OVA)
+    # First, let's find out if the 'imgName' argument is an OVA file,
+    # or the name of one of our registered images.
+
+    # Start by presuming the wouldbe registered image full filepath
+    imgFile = imgName
     existingImage = os.path.join(vmhome, imgName)  # To see if it's an existing image
     if os.path.isfile(imgFile):
-        imgFile = os.path.abspath(imgFile)           # It's a file
+        imgFile = os.path.abspath(imgFile)         # It's a file
     elif os.path.isfile(existingImage):
-        imgFile = os.path.abspath(existingImage)     # It's one of our images
+        imgFile = os.path.abspath(existingImage)   # It's one of our images
     else:
-        print("'{}' is neither an OVA file, nor an existing image".format(imgName))
+        print("'%s' is neither an OVA file, nor an existing image" % (imgName))
         return 1
 
-    # Inspect OVA before importing into this new VM we're creating from it
+    # Proceed to create VM
+
+    # FIRST, inspect the OVA before we import/create the new VM
     appliance = vbox.createAppliance()   # Create empty IAppliance object
     appliance.read(imgFile)              # Read OVA file into this IAppliance object
     appliance.interpret()                # Populate virtualSystemDescriptions object
     warnings = appliance.getWarnings()   # Check for warnings during OVA interpretation
     if warnings:
         print("OVA interpretation warnings: {}".format(warnings))
-    sysDesc = appliance.getVirtualSystemDescriptions()  # Get IVirtualSystemDescription object
-    if len(sysDesc) != 1:
-        print("Fatal: There are 0 or more than 1 VM described in this OVA. Unsupported.")
-        return 1
 
-    # getDescription returns a list data structure of 5 other lists, which we'll call descList
-    descList = sysDesc[0].getDescription() # Get descriptions for the only VM we expect in the OVA
-    dCount = sysDesc[0].count              # Get the number of descriptions
-    types = descList[0]                    # 1st list holds all the VirtualSystemDescriptionType
-            # 01 = Ignore                  02 = OS                     03 = Name
-            # 04 = Product                 05 = Vendor                 06 = Version
-            # 07 = ProductUrl              08 = VendorUrl              09 = Description
-            # 10 = License                 11 = Miscellaneous          12 = CPU
-            # 13 = Memory                  14 = HardDiskControllerIDE  15 = HardDiskControllerSATA
-            # 16 = HardDiskControllerSCSI  17 = HardDiskControllerSAS  18 = HardDiskImage
-            # 19 = Floppy                  20 = CDROM                  21 = NetworkAdapter
-            # 22 = USBController           23 = SoundCard              24 = SettingsFile
+    # Get list of VM VirtualSystemDescription (VSD) in this OVA. Although
+    # rarely used, the OVF standard allows for an OVA to contain
+    # more than just one (1) VM definition, so here we check for that  
+    sysDesc = appliance.getVirtualSystemDescriptions()
+    if len(sysDesc) == 0:
+        print("Zero (0) VMs described in OVA.")
+        Exit(1)
+    if len(sysDesc) > 1:
+        print("More than one (1) VM defined in OVA. Unsupported.")
+        Exit(1)
+
+    # ---------------------------
+    # At this point sysVSDList[0] holds our single VM definition
+    # ---------------------------
+
+    # BACKGROUND: A VM "VSD" is made up of five (5) different arrays:
+    # 1. Types: A ULONG array to hold the respective VirtualSystemDescriptionType type element
+    #      01 = Ignore                  02 = OS                     03 = Name
+    #      04 = Product                 05 = Vendor                 06 = Version
+    #      07 = ProductUrl              08 = VendorUrl              09 = Description
+    #      10 = License                 11 = Miscellaneous          12 = CPU
+    #      13 = Memory                  14 = HardDiskControllerIDE  15 = HardDiskControllerSATA
+    #      16 = HardDiskControllerSCSI  17 = HardDiskControllerSAS  18 = HardDiskImage
+    #      19 = Floppy                  20 = CDROM                  21 = NetworkAdapter
+    #      22 = USBController           23 = SoundCard              24 = SettingsFile
+    #      25 = BaseFolder              26 = PrimaryGroup           27 = CloudInstanceShape
+    #      ... there are others, but at the moment we don't care about them ...
+    # 2. Refs: A BSTR array used by some of the above Types element to store some values
+    # 3. OVFValues: A BSTR array of all original OVA values for each Types element
+    # 4. VBoxValues: A BSTR array of what values to use for each Types when creating a new VM
+    # 5. ExtraConfigValues: A BSTR array of additional values for each Types
+
+    # Note that the index in each array corresponds to values the other arrays. So when
+    # Types[2] = 3 (machine name), then the actual name is stored in the VBoxValues[2].
+    # Please read the SDK documentation pages 383+ for more info on this.
+    
+    # Also note that the most important value for each type description is whether or
+    # not it is ENABLED, and that's a boolean array WE HAVE TO create new ourselves,
+    # separately (we call it enableValue here), which we will later pass to the
+    # IVirtualSystemDescription_SetFinalValues function, to create the VM using this OVA.
+
+    # Before we even get started, let's remove any HardDiskControllerIDE types,
+    # since we never use those for development VMs, just SATA ones.
+    sysDesc[0].removeDescriptionByType(const.VirtualSystemDescriptionType_HardDiskControllerIDE)
+
+    # Now get the 5 individual VSD arrays that describe our sole sysVSDList[0] VM object
+    descList = sysDesc[0].getDescription()
+    dCount = sysDesc[0].count        # Also get the number of descriptions
+    types = descList[0]              # 1st list holds all the VirtualSystemDescriptionType
     refs = descList[1]               # 2nd list is 'refs' use by some descriptions
     OVFValues = descList[2]          # 3rd list is original 'OVFValues' saved in the OVF
     VBoxValues = descList[3]         # 4th list is 'VBoxValues' suggestions for new VMs
     extraConfigValues = descList[4]  # 5th list is 'extraConfigValues' for each entry
-    enableValue = [True] * (dCount)  # Create/init boolean list assuming all items will remain enabled
 
-    # Note: The index in each list corresponds to values for that specific description. so
-    # For instance if types[2] = 3, the Name of the machine, then actual name is stored in
-    # VBoxValues[2]. The most important value for each description is whether or not it is
-    # enabled, which is held in list enableValue[]
+    # Create and inititialize our boolean Enable array
+    enableValue = [True] * (dCount)
 
-
-    # Now let's import all resources defined in the OVA
-
-    # Update the lists to always create VM with: 1 HDD, 1 cpu, 1GB RAM, and 2 NICs
+    # Update the five(5) lists to create a VM with the following values
     for i in range(dCount):
+        # Disable all virtual hardware types that are hardly ever used in most VM
+        # configurations used for development (and that we're allow to disable)
         if types[i] in [14, 16, 19, 20, 22, 23]:
-            # Here we're disabling ALMOST all virtual hardware types that we're allow to disable,
-            # because they are hardly ever used in most VM configurations used for development:
-            #   HardDiskControllerIDE (14)
-            #   HardDiskControllerSCSI (16)
-            #   Floppy (19)
-            #   CDROM (20)
-            #   USBController (22)
-            #   SoundCard (23)
             enableValue[i] = False
             continue
 
@@ -436,7 +457,7 @@ def vmCreate(args):
     while not progress.completed:
         time.sleep(0.2)
 
-    # Machine was created successfully if we can get its IMachine object
+    # Machine was created successfully if we can now get its IMachine object
     try:
         vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
     except:
@@ -444,17 +465,19 @@ def vmCreate(args):
         return 1
 
     # Get a write lock session on the VM and ensure disk1 is the only bootable device
-    (vmMuta, session) = openSession(vm, const.LockType_Write)
+    (vmMuta, session) = OpenSession(vm, const.LockType_Write)
     vmMuta.setBootOrder(1, const.DeviceType_HardDisk)
-    closeSession(session)  # Close write session
+    vmMuta.setBootOrder(1, const.DeviceType_Null)
+    # We don't bother with order 3, 4 or others, since they are hardly used
 
-    # Let's make sure this VM gets a proper IP address
-    ip = getIP(vm)                    # Get officially defined IP
-    if invalidIP(ip) or usedIP(ip):   # Ensure we have a good IP address
-        ip = vmdefip                    # Use global default IP if necessary
-        if usedIP(ip):                  # Call nextUniqueIP if global default is already taken
-            ip = nextUniqueIP(ip)
-    setIP(vm, ip)
+    # Some default network settings
+    vmMuta.setGuestPropertyValue("/vm/nettype", "ho")
+    
+    CloseSession(session)  # Close write session
+
+    # Finally, let's make sure VM is set up with next unique IP address
+    ip = NextUniqueIP(vmdefip)
+    SetIP(vm, ip)
     return 0
 
 
@@ -488,10 +511,10 @@ def vmStart(args):
     if ipAddr == '<undefined>':
         print("IP address is '<undefined>'")
         return 1
-    if invalidIP(ipAddr):
+    if not ValidIPStr(ipAddr):
         print("IP address '{}' is invalid.".format(ipAddr))
         return 1
-    if not setIP(vm, ipAddr):    # Store IP in official location and setup net devices
+    if not SetIP(vm, ipAddr):    # Store IP in official location and setup net devices
         return 1                   # Don't start if we couldn't set IP address
 
     # Launch VM process
@@ -543,64 +566,64 @@ def vmStop(args):
 
     # Try running poweroff command from within the VM (most graceful method)
     if vm.state == const.MachineState_Running:
-        vmSSH([vmName, '/usr/sbin/poweroff'], False)
+        vmSSH([vmName, "sudo poweroff"], False)
         # Give this method no more than 3 sec to finish
         timeOut = time.time() + 3
         while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:
             time.sleep(0.1)
 
-    # Try normal powerDown API call
-    downable = [const.MachineState_Running, const.MachineState_Paused, const.MachineState_Stuck]
-    if vm.state in downable and vm.state != const.MachineState_PoweredOff:
+    # Finally, try normal powerDown API call
+    if vm.state == const.MachineState_Running:
         try:
-            (dummy1, session) = openSession(vm, const.LockType_Shared)
+            (dummy1, session) = OpenSession(vm, const.LockType_Shared)
             session.console.powerDown()
             # Give this method no more than 3 sec to finish
             timeOut = time.time() + 3
             while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:
                 time.sleep(0.1)
-            closeSession(session)
+            CloseSession(session)
         except:
-            dummy1 = True  # Dummy code. Try another method below
+            pass # ... failed
 
-    # Try power button API call
-    if vm.state != const.MachineState_PoweredOff:
-        try:
-            (dummy1, session) = openSession(vm, const.LockType_Shared)
-            session.console.powerButton()
-            # Give this method no more than 3 sec to finish
-            timeOut = time.time() + 3
-            while timeOut > time.time() and vm.state != const.MachineState_PoweredOff:
-                time.sleep(0.1)
-            closeSession(session)
-        except:
-            dummy1 = True  # Dummy code. Try another method below
-
-    # Finally just kill the OS processes. Caveat: leaves VM in Aborted state
-    if vm.state != const.MachineState_PoweredOff:
-        killVM = "kill -9 `ps auxwww | grep \"VBoxHeadles[s] --comment {}" \
-                 " --startvm\" | awk '{print $2}'` > /dev/null 2>&1".format(vmName)
-        subprocess.call(killVM, shell=True)
-    return 0
+    if vm.state == const.MachineState_Running:
+        print("Future bug has arrived. Couln't stop VM.\n"
+            "Need additional ways to ensure VM is indeed shuttered\n")
+        return False
+    return True
 
 
-def sshAccess(ip):
-    if invalidIP(ip):
-        return True
+# Check if port 22 is open on given IP address
+def SSHPortOpen(ip):
+    if not ValidIPStr(ip): return True
 
+    # Generic port checker
+    port = 22
+    import socket
     from contextlib import closing
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        if sock.connect_ex((ip, 22)) == 0:
-            return False
-        else:
-            return True
+    try:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TCP
+            #sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
+            socket.setdefaulttimeout(2.0) # seconds (float)
+            result = sock.connect_ex((ip, port))
+            if result == 0: return True
+            else: return False
+            #sock.close()
+    except:
+        pass
+    return False
 
-    # Check if IP is active
-    # Send 1 packet and wait 300 milliseconds for a reply
-    # A non-zero value return means the IP is NOT alive, and probably not used
-    IPNotInUse = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
-    if IPNotInUse:
-        return True
+    # On second thought, let's not do below IP check. It slows things down a bit too much,
+    # so let's put the onus back on the user to allocate IP addresses correctly. We could
+    # implement as a FUTURE OPTION, using raw sockets as detailed here for C:
+    # https://stackoverflow.com/questions/7647219/how-to-check-if-a-given-ip-address-is-reachable-in-c-program
+    # -------------
+    # # Check if IP is active
+    # # Send 1 packet and wait 300 milliseconds for a reply
+    # # A non-zero value return means the IP is NOT alive, and probably not used
+    # IPNotInUse = subprocess.call("ping -c 1 -W 300 {} >/dev/null 2>&1".format(ip), shell=True)
+    # if IPNotInUse:
+    #     return True
 
 
 def vmSSH(args, verbose = True):
@@ -626,7 +649,7 @@ def vmSSH(args, verbose = True):
     ssh += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
     ip = getIP(vm)
-    if not sshAccess(ip):
+    if not SSHPortOpen(ip):
         print("VM SSH unreachable over {}:22".format(ip))
         return 1
 
@@ -657,7 +680,7 @@ def SCPVM(source, vmName, destination, verbose = True):
     scp += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
     ip = getIP(vm)
-    if not sshAccess(ip):
+    if not SSHPortOpen(ip):
         print("VM SSH unreachable over {}:22".format(ip))
         return 1
 
@@ -824,8 +847,8 @@ def vmInfo(args):
     return 0
 
 
-def getHostMainNIC():
-    nicList = getNICList()
+def GetHostMainNIC():
+    nicList = GetNICList()
     for nic in nicList:
         # Return first NIC name with valid IP address
         if nic.name[:2] != 'en':
@@ -836,7 +859,7 @@ def getHostMainNIC():
     return ''
 
 
-def getNICList():
+def GetNICList():
     # Get list of Bridged and HostOnly networks defined on this host
     netList = []
     for nic in vbox.host.getNetworkInterfaces():
@@ -865,13 +888,13 @@ def netType(args):
         print("VM '{}' needs to be powered off for this".format(vmName))
         return 1
 
-    (vmMuta, session) = openSession(vm, const.LockType_Write)
+    (vmMuta, session) = OpenSession(vm, const.LockType_Write)
     vmMuta.setGuestPropertyValue("/vm/nettype", nettype)
-    closeSession(session)
+    CloseSession(session)
     return 0
 
 def netList():
-    netList = getNICList()
+    netList = GetNICList()
     if len(netList) != 0:
         fmt = "{:24}{:12}{:12}{:16}{:16}{}"
         print(fmt.format("NAME", "TYPE", "DHCP", "IPADDRESS", "NETMASK", "STATUS"))
@@ -895,7 +918,7 @@ def netAdd(args):
         print("Usage: vm netadd <gateway-ip>")
         return 1
     ip = args[0]
-    if invalidIP(ip):
+    if not ValidIPStr(ip):
         print("IP address '{}' is invalid".format(ip))
         return 1
     if ip.split('.')[3] != "1":
@@ -920,7 +943,7 @@ def netDelete(args):
         return 1
     vboxnetName = args[0]
     vboxnetDoesntExists = True
-    for net in getNICList():
+    for net in GetNICList():
         if net.interfaceType == 2 and net.name == vboxnetName:    # Only for interfaceType 2 (HostOnly)
             vboxnetDoesntExists = False
             break
@@ -947,7 +970,7 @@ def vmIp(args):
         print("VM '{}' doesn't exist".format(vmName))
         return 1
 
-    if usedIP(ip):
+    if UsedIP(ip):
         print("IP '{}' is already in used by another VM".format(ip))
         return 1
 
@@ -955,7 +978,7 @@ def vmIp(args):
         print("MV '{}' needs to be powered off for this".format(vmName))
         return 1
 
-    if not setIP(vm, ip):
+    if not SetIP(vm, ip):
         print("Unable to set VM '{}' IP to '{}'".format(vmName, ip))
         return 1
     return 0
@@ -992,10 +1015,10 @@ def vmMod(args):
               .format(vbox.host.memoryAvailable, memory))
         return 1
 
-    (vmMuta, session) = openSession(vm, const.LockType_Write)
+    (vmMuta, session) = OpenSession(vm, const.LockType_Write)
     vmMuta.CPUCount    = cpu
     vmMuta.memorySize  = memory
-    closeSession(session)
+    CloseSession(session)
     return 0
 
 
@@ -1057,7 +1080,7 @@ def vmProvision(args):
             return 1
 
         vmNetIp = cfg.get(sect, 'netip')         # 3 netip (Mandatory)
-        if invalidIP(vmNetIp) or vmNetIp.endswith(".1"):
+        if not ValidIPStr(vmNetIp) or vmNetIp.endswith(".1"):
             print("[{}] IP address '{}' is invalid".format(vmName, vmNetIp))
             return 1
 
@@ -1136,7 +1159,7 @@ def vmProvision(args):
                 vmStop([vmName, "f"])
             vmMod([vmName, str(vmCpus), str(vmMemory)])  # Update cpu and memory (note the string conversion)
             netType([vmName, vmNettype])                 # Set Net Type
-            setIP(vm, vmNetIp)                           # Update IP address
+            SetIP(vm, vmNetIp)                           # Update IP address
             ret = vmStart([vmName])                      # Start machine
             if ret != 0:
                 print("[{}] Error starting VM".format(vmName))
@@ -1149,7 +1172,7 @@ def vmProvision(args):
             timeOut = time.time() + 120
 
             # Wait a bit till SSH is ready
-            while timeOut > time.time() and not sshAccess(vmNetIp):
+            while timeOut > time.time() and not SSHPortOpen(vmNetIp):
                 time.sleep(0.1)
 
             SCPVM(source, vmName, destination)
@@ -1205,7 +1228,7 @@ def imgDelete(args):
 def imgImport(args):
     if len(args) != 1:
         print("Usage: vm imgimp <imgFile>")
-        sys.exit(1)
+        Exit(1)
     imgFile = args[0]
     if not os.path.isfile(imgFile):
         print("File '{}' does not exist".format(imgFile))
@@ -1238,7 +1261,7 @@ def imgImport(args):
 def imgCreate(args):
     if len(args) != 2:
         print("{} imgcreate <imgName> <vmName>".format(prgName))
-        sys.exit(1)
+        Exit(1)
     (imgName, vmName) = args
     if not imgName.lower().endswith('.ova'):
         print("Image name must have an '.ova' extension.")
