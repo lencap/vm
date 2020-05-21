@@ -3,19 +3,15 @@
 # Simple Linux VM manager
 
 # @todo
-# Much to optimize and do better
+# Setup keyboard interrupt handler
 # Allow easy switching/update of username and ssh key
 # Allow direct file transfer between VMs
 # Allow multiple vmcopy and vmrun
-# Document the code a little better
-# Full switch to python3
-# More readable c printf c style
-# Use simple string lists intead of const enumElem
-# Unless required, use " for strings, and ' for chars
-# Setup keyboard interrupt handler
+# Don't mess with VMs that were not created by this program
+# Switch to python3, when VBox supports it
+
 # vmcreate func: nextunique IP part, at end, as per vmcreate.c
 # Update vmcreate comments, based on vmcreate.c 
-# Switch to Exit()
 
 import os
 import sys
@@ -31,128 +27,141 @@ try:
     from vboxapi import VirtualBoxManager
 except ImportError:
     print("Missing 'vboxapi' module. Is VirtualBox installed?")
-    sys.exit(1)
+    Exit(1)
 
 # Global variables
-prgVer    = 'v265'
-prgName   = 'vm'
-vmhome    = os.environ['HOME'] + '/.vm'    # Config directory
-vmsshpri  = vmhome + '/vmkey'              # Private SSH key file
-vmsshpub  = vmhome + '/vmkey.pub'          # Public SSH key file
-vmconf    = 'vm.conf'                      # Provisioning filename
-vmdefip   = '10.11.12.2'                   # Default IP address
-vmuser    = 'vmuser'                       # Default user
+prgVer    = "v265"
+prgName   = "vm"
+vmhome    = os.environ["HOME"] + "/.vm"    # Config directory
+vmsshpri  = vmhome + "/vmkey"              # Private SSH key file
+vmsshpub  = vmhome + "/vmkey.pub"          # Public SSH key file
+vmconf    = "vm.conf"                      # Provisioning filename
+vmdefip   = "10.11.12.2"                   # Default IP address
+vmuser    = "vmuser"                       # Default user
 vboxmgr   = None                           # IVirtualBoxClient handle
 const     = None                           # Constants handle
 vbox      = None                           # IVirtualBox handle
 vbhome    = None                           # VirtualBox home directory
 
-# These constants of the enum types are a bit repetitive, but they make
-# things so much more clearer
+# Repeating these enum types constants is a bit redundant, but makes code more readable
 # StorageControllerType
 CtrlType = [ "Null", "LsiLogic", "BusLogic", "IntelAhci", "PIIX3",
     "PIIX4", "ICH6", "I82078", "LsiLogicSas", "USB", "VNMe", "VirtioSCSI" ]
 # DeviceType
 DevType = [ "Null", "Foppy", "DVD", "HardDisk", "Network", "USB",
     "SharedFolder", "Graphics3D" ]
+# MachineState
+VMStateStr = [ "Null", "PoweredOff", "Saved", "Teleported", "Aborted",
+    "Running", "Paused", "Stuck", "Teleporting", "LiveSnapshotting", "Starting",
+    "Stopping", "Saving", "Restoring", "TeleportingPausedVM", "TeleportingIn",
+    "DeletingSnapshotOnline", "DeletingSnapshotPaused", "OnlineSnapshotting",
+    "RestoringSnapshot", "DeletingSnapshot", "SettingUp", "Snapshotting",
+    "FirstOnline", "LastOnline", "FirstTransient", "LastTransient" ]
+# SessionState
+SessState = [ "Null", "Unlocked", "Locked", "Spawning", "Unlocking" ]
+# NetworkAdapterType
+NICType = [ "Null", "Am79C970A", "Am79C973", "I82540EM", "I82543GC",
+    "I82545EM", "Virtio", "Am79C960", "Virtio_1_0" ]
+# NetworkAttachmentType
+NICattType = [ "Null", "NAT", "Bridged", "Internal", "HostOnly",
+    "Generic", "NATNetwork", "Cloud" ]
+# NetworkAdapterPromiscModePolicy
+PromiscMode = [ "Undefined", "Deny", "AllowNetwork", "AllowAll" ]
+# HostNetworkInterfaceType
+NICifType = { "Null", "Bridged", "HostOnly" }
+# HostNetworkInterfaceStatus
+NICStatus = { "Unknown", "Up", "Down" }
+
 
 
 def PrintUsage():
     p = prgName
     print("Simple Linux VM Manager %s\n"
-          "%s list                                   List all VMs\n"
-          "%s create    <vmName> <[ovaFile|imgName>  Create VM form given ovaFile, or imgName\n"
-          "%s del       <vmName> [f]                 Delete VM. Force option\n"
-          "%s start     <vmName> [g]                 Start VM. GUI option\n"
-          "%s stop      <vmName> [f]                 Stop VM. Force option\n"
-          "%s ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
-          "%s prov      [<vmConf>|c]                 Provision VMs in given vmConf file; Create skeleton file option\n"
-          "%s info      <vmName>                     Dump subset of all VM details for common troubleshooting\n"
-          "%s mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
-          "%s ip        <vmName> <ip>                Set VM IP address\n"
-          "%s imglist                                List all available images\n"
-          "%s imgcreate <imgName> <vmName>           Create imgName from existing VM\n"
-          "%s imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
-          "%s imgimp    <imgFile>                    Import image. Make available to this program\n"
-          "%s imgdel    <imgName> [f]                Delete image. Force option\n"
-          "%s nettype   <vmName> <ho[bri]>           Set NIC type to Bridge as option; default is always HostOnly\n"
-          "%s netlist                                List available HostOnly networks\n"
-          "%s netadd    <ip>                         Create new HostOnly network\n"
-          "%s netdel    <vboxnetX>                   Delete given HostOnly network"
-          % (prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
+        "%s list                                   List all VMs\n"
+        "%s create    <vmName> <ovaFile|imgName>   Create VM form given ovaFile, or imgName\n"
+        "%s del       <vmName> [f]                 Delete VM. Force option\n"
+        "%s start     <vmName> [g]                 Start VM. GUI option\n"
+        "%s stop      <vmName> [f]                 Stop VM. Force option\n"
+        "%s ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
+        "%s prov      [<vmConf>|c]                 Provision VMs in given vmConf file; Create skeleton file option\n"
+        "%s info      <vmName>                     Dump subset of all VM details for common troubleshooting\n"
+        "%s mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
+        "%s ip        <vmName> <ip>                Set VM IP address\n"
+        "%s imglist                                List all available images\n"
+        "%s imgcreate <imgName> <vmName>           Create imgName from existing VM\n"
+        "%s imgpack                                How-to create brand new OVA image with Hashicorp packer\n"
+        "%s imgimp    <imgFile>                    Import image. Make available to this program\n"
+        "%s imgdel    <imgName> [f]                Delete image. Force option\n"
+        "%s nettype   <vmName> <ho[bri]>           Set NIC type to Bridge as option; default is always HostOnly\n"
+        "%s netlist                                List available HostOnly networks\n"
+        "%s netadd    <ip>                         Create new HostOnly network\n"
+        "%s netdel    <vboxnetX>                   Delete given HostOnly network"
+        % (prgVer, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p, p))
     Exit()
-
-
-def CreateVMConf():
-    with open(vmconf, "w") as f:
-        f.write("# vm.conf\n"
-                "# Running 'vm prov' in a directory with this file in it will automatically\n"
-                "# provision the VMs defined here. Each VM requires its own section name,\n"
-                "# which becomes the VM name. Then there are 7 other possible keys you can\n"
-                "# define. Two of which are mandatory (image and netip). The other 5 (cpus,\n"
-                "# memory, vmcopy, vmrun, and nettype) are optional. Lines starting with a\n"
-                "# hash(#) are treated as comments. Spaces can only be used within double\n"
-                "# quotes (\"). vmcopy and vmrun are perfect for copying/running bootstrapping\n"
-                "# scripts. Note these last 2 can only appear once a piece, as duplicate keys\n"
-                "# are not yet allowed. It is best to put everything inside just one bootstrapping\n"
-                "# script. You can also name this file anything you want and provision with\n"
-                "# 'vm prov MYFILE'.\n\n"
-                "#[dev1]\n"
-                "#image   = centos7-1908.ova\n"
-                "#netip   = 10.11.12.2\n"
-                "#cpus    = 1\n"
-                "#memory  = 1024\n"
-                "#vmcopy  = \"./bootstrap.sh /tmp/bootstrap.sh\"\n"
-                "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
-                "#[dev2]\n"
-                "#image   = ubuntu1804.ova\n"
-                "#netip   = 10.11.12.3\n"
-                "#nettype = bri\n")
-    os.chmod(vmconf, 0o644)
 
 
 def CreateSSHKeys():
     if not os.path.isdir(vmhome):  # Ensure config directory exists
         os.makedirs(vmhome)
 
-    with open(vmsshpri, "w") as f:
+    with open(vmsshpri, 'w') as f:
         f.write("-----BEGIN RSA PRIVATE KEY-----\n"
-                "MIIEoQIBAAKCAQEAyIZo/WEpMT8006pKzqHKhNEAPITJCEWjLN+cGSg9snFXVljA\n"
-                "IQ9CtLo89PJvnfGj8I9VxXPxCUmC8gew/XXxQuExa0XhSSNYDEqMyOvlB8KSoYw8\n"
-                "tFwNAYaeHw4rbygIgOSn5+g1lLXEf+FPa5JJJAByoxvqXtxZhwiJP2BOkp/ULqsy\n"
-                "1UGbHFzGsYHkD8ukYINnr8Yob5K3GuvBSZkb4o02ErC0Tj9Xi52vxgSQEKNQs5BO\n"
-                "xzb4gtJ7ozArd11xrpmel02bH7mRfrB/Gpsfvb4WXRG9Kiat09T3XjceMAlcmMUG\n"
-                "QJD0ip1mgN3elTCGpon8K5ZRWGxrF7G8XqnGQQIBIwKCAQBKexENp77XxwT+KU78\n"
-                "SrjvgNQzvEqrTRC45Vc8i0odtRHPnU6tMY3OGUnXUru+UnAXhbIkxKn8Ip5Z5ZmC\n"
-                "tsdTWvUZNzZrn2nYrfnG+IhEtfvy3FEPyms7FL5jTmfndUT8rLNkw/ak8w54pCTQ\n"
-                "LwU5Qf6xnKeCUdgcNl7dBoOViyj8eourzUCY55JMZFDF7exKA6j2FXdUsl6O8zlZ\n"
-                "immjlbO6dSkZt203jyuFlV1YNG/13EjeihmvMDugnP2CP1qr9kUpGn1NfwdCVb2/\n"
-                "AJz+g8gvZflOIzYaEiaodEMJsGNA2sXuygOVSZy4ryc3iFezA4Bvk/3bLweNqlvj\n"
-                "yVSLAoGBAP7tjUErm9ciDzLnXe6+toV2E1e1D/a/z2t/GxbbxPYklAUeWaPLhcsZ\n"
-                "9B7aUx7BGeB+lPI5sP//hc8ouFTTgE3Y9nsgOjEY7HFIDSG1xrN+MnuY+ztNeDif\n"
-                "Jfs44vMdP32pAwJqgtKtg1KiILqx81XeMYhBynpwooISJTioW5FRAoGBAMleSirb\n"
-                "GrOZtrsj2s0Uz6LAtPpQfGaQp/5CVYYt/QlUUnR0fhgCaT8DduCrbhOJcmoo5V1K\n"
-                "EimEQPhAM6JFMpIuDBp+kQT7FKo1Rl6J+igId5N/jc72nm1kpYBfzGLlAqxU13jJ\n"
-                "ULXBU+QU5ZLrRESrTwZun9ytXvwR/O7HMCnxAoGBAPek755k4IfX8YHoEhsfqf39\n"
-                "rGPUdehijvq1/Q7kHmtz/YFQrtmhIuKOPZpQbgCeU6bhXX2XIPivFEWVRVm3g/Pa\n"
-                "FAKUVclLaVgaG2KTU09HZD2NS9M1UDcBAFMhUX50LwxbCjzcfxXNIHwod5DKH5U+\n"
-                "Pr7g01JeycAu4lRLxqprAoGASstAHovlWKbO18t9J5oD+p9ZKcYfk89UVx/z4WGJ\n"
-                "3uTOK0E2JizIAXZQudlGJIOCRLAarZ8rUT/AXDUafhmzsqNjlM/suLUHrO83ZPFr\n"
-                "izZYTLpZPj5YGgDPwfeyUJ40MWFXWL/NhVZvndvgPeJbL3LUNZbNqby84UiChJMg\n"
-                "hJsCgYA5KiUh42OZgHjez5SGvDBoBaOPwutk5O5ufESfgpzh3W0r6iA/dy+HesYV\n"
-                "7YDhwSXl7zQgWHKb76SE1/fQcBYOd4TcKzbq4IDU1+oibcOXRMOGkg6vdsXhAvdU\n"
-                "ADiALhM7Gqxc0eIMPSw4REhLiS2XNlTSL8fxPHMVJSIuPn+SXw==\n"
-                "-----END RSA PRIVATE KEY-----\n")
+            "MIIEoQIBAAKCAQEAyIZo/WEpMT8006pKzqHKhNEAPITJCEWjLN+cGSg9snFXVljA\n"
+            "IQ9CtLo89PJvnfGj8I9VxXPxCUmC8gew/XXxQuExa0XhSSNYDEqMyOvlB8KSoYw8\n"
+            "tFwNAYaeHw4rbygIgOSn5+g1lLXEf+FPa5JJJAByoxvqXtxZhwiJP2BOkp/ULqsy\n"
+            "1UGbHFzGsYHkD8ukYINnr8Yob5K3GuvBSZkb4o02ErC0Tj9Xi52vxgSQEKNQs5BO\n"
+            "xzb4gtJ7ozArd11xrpmel02bH7mRfrB/Gpsfvb4WXRG9Kiat09T3XjceMAlcmMUG\n"
+            "QJD0ip1mgN3elTCGpon8K5ZRWGxrF7G8XqnGQQIBIwKCAQBKexENp77XxwT+KU78\n"
+            "SrjvgNQzvEqrTRC45Vc8i0odtRHPnU6tMY3OGUnXUru+UnAXhbIkxKn8Ip5Z5ZmC\n"
+            "tsdTWvUZNzZrn2nYrfnG+IhEtfvy3FEPyms7FL5jTmfndUT8rLNkw/ak8w54pCTQ\n"
+            "LwU5Qf6xnKeCUdgcNl7dBoOViyj8eourzUCY55JMZFDF7exKA6j2FXdUsl6O8zlZ\n"
+            "immjlbO6dSkZt203jyuFlV1YNG/13EjeihmvMDugnP2CP1qr9kUpGn1NfwdCVb2/\n"
+            "AJz+g8gvZflOIzYaEiaodEMJsGNA2sXuygOVSZy4ryc3iFezA4Bvk/3bLweNqlvj\n"
+            "yVSLAoGBAP7tjUErm9ciDzLnXe6+toV2E1e1D/a/z2t/GxbbxPYklAUeWaPLhcsZ\n"
+            "9B7aUx7BGeB+lPI5sP//hc8ouFTTgE3Y9nsgOjEY7HFIDSG1xrN+MnuY+ztNeDif\n"
+            "Jfs44vMdP32pAwJqgtKtg1KiILqx81XeMYhBynpwooISJTioW5FRAoGBAMleSirb\n"
+            "GrOZtrsj2s0Uz6LAtPpQfGaQp/5CVYYt/QlUUnR0fhgCaT8DduCrbhOJcmoo5V1K\n"
+            "EimEQPhAM6JFMpIuDBp+kQT7FKo1Rl6J+igId5N/jc72nm1kpYBfzGLlAqxU13jJ\n"
+            "ULXBU+QU5ZLrRESrTwZun9ytXvwR/O7HMCnxAoGBAPek755k4IfX8YHoEhsfqf39\n"
+            "rGPUdehijvq1/Q7kHmtz/YFQrtmhIuKOPZpQbgCeU6bhXX2XIPivFEWVRVm3g/Pa\n"
+            "FAKUVclLaVgaG2KTU09HZD2NS9M1UDcBAFMhUX50LwxbCjzcfxXNIHwod5DKH5U+\n"
+            "Pr7g01JeycAu4lRLxqprAoGASstAHovlWKbO18t9J5oD+p9ZKcYfk89UVx/z4WGJ\n"
+            "3uTOK0E2JizIAXZQudlGJIOCRLAarZ8rUT/AXDUafhmzsqNjlM/suLUHrO83ZPFr\n"
+            "izZYTLpZPj5YGgDPwfeyUJ40MWFXWL/NhVZvndvgPeJbL3LUNZbNqby84UiChJMg\n"
+            "hJsCgYA5KiUh42OZgHjez5SGvDBoBaOPwutk5O5ufESfgpzh3W0r6iA/dy+HesYV\n"
+            "7YDhwSXl7zQgWHKb76SE1/fQcBYOd4TcKzbq4IDU1+oibcOXRMOGkg6vdsXhAvdU\n"
+            "ADiALhM7Gqxc0eIMPSw4REhLiS2XNlTSL8fxPHMVJSIuPn+SXw==\n"
+            "-----END RSA PRIVATE KEY-----\n")
     os.chmod(vmsshpri, 0o600)
     subprocess.call("ssh-keygen -f {} -y > {}".format(vmsshpri,vmsshpub), shell=True)
 
 
-def enumElem(enumerate, element):
-    all = const.all_values(enumerate)     # Global variable
-    for key in all.keys():
-        if str(element) == str(all[key]):
-            return key
-    return "<unknown>"
+def CreateVMConf():
+    with open(vmconf, "w") as f:
+        f.write("# vm.conf\n"
+            "# Running 'vm prov' in a directory with this file in it will automatically\n"
+            "# provision the VMs defined here. Each VM requires its own section name,\n"
+            "# which becomes the VM name. Then there are 7 other possible keys you can\n"
+            "# define. Two of which are mandatory (image and netip). The other 5 (cpus,\n"
+            "# memory, vmcopy, vmrun, and nettype) are optional. Lines starting with a\n"
+            "# hash(#) are treated as comments. Spaces can only be used within double\n"
+            "# quotes (\"). vmcopy and vmrun are perfect for copying/running bootstrapping\n"
+            "# scripts. Note these last 2 can only appear once a piece, as duplicate keys\n"
+            "# are not yet allowed. It is best to put everything inside just one bootstrapping\n"
+            "# script. You can also name this file anything you want and provision with\n"
+            "# 'vm prov MYFILE'.\n\n"
+            "#[dev1]\n"
+            "#image   = centos72003.ova\n"
+            "#netip   = 10.11.12.2\n"
+            "#cpus    = 1\n"
+            "#memory  = 1024\n"
+            "#vmcopy  = \"./bootstrap.sh /tmp/bootstrap.sh\"\n"
+            "#vmrun   = \"/tmp/bootstrap.sh\"\n\n"
+            "#[dev2]\n"
+            "#image   = ubuntu1804.ova\n"
+            "#netip   = 10.11.12.3\n"
+            "#nettype = bri\n")
+    os.chmod(vmconf, 0o644)
 
 
 def openSession(vm, lockType):
@@ -160,29 +169,38 @@ def openSession(vm, lockType):
     timeOut = time.time() + 5
     while timeOut > time.time() and vm.sessionState != const.SessionState_Unlocked:
         time.sleep(0.01)
-    session = vboxmgr.getSessionObject(vbox)    # Get ISession objects
+
+    # Get ISession objects
+    session = vboxmgr.getSessionObject(vbox)
+
     vm.lockMachine(session, lockType)
     # LockType_Null=0   LockType_Shared=1   LockType_Write=2  LockType_VM=3
-    return session.machine, session             # Return mutable IMachine and ISession objects
+    # Return mutable IMachine and ISession objects
+    return session.machine, session
 
 
+# Save all settings and unlock session
 def closeSession(session):
-    session.machine.saveSettings()  # Save all settings and unlock session
+    session.machine.saveSettings()
     session.unlockMachine()
     return 0
 
 
+# Get network type as defined in official store location for this program
 def getNetType(vm):
-    netType = vm.getGuestPropertyValue('/vm/nettype')  # Try official store location for this program
+    netType = vm.getGuestPropertyValue("/vm/nettype")
     if netType == '' or netType == None:
-        netType  = 'ho'                                  # Default to it being HostOnly
+        # Default to it being HostOnly
+        netType  = "ho"
     return netType
 
 
+# Get IP address as defined in official store location for this program
 def getIP(vm):
-    ip = vm.getGuestPropertyValue('/vm/ip')   # Try official store location for this program
+    ip = vm.getGuestPropertyValue('/vm/ip')
     if ip == '' or ip == None:
-        ip  = '<undefined>'                     # Default to it being undefined
+        # Default to it being undefined
+        ip  = "<undefined>"
     return ip
 
 
@@ -297,14 +315,14 @@ def setIP(vm, ip):
 
 def vmList():
     if len(vbox.getMachines()) == 0:
-        return
+        return    
     print("%-34s%-16s%-5s%-7s%-12s%s" %
         ("NAME", "OS", "CPU", "MEM", "STATE", "SSH"))
     for vm in vbox.getMachines():
         name = vm.name
         if len(name) > 34:
             name = name + ' '
-        state = enumElem("MachineState", vm.state)
+        state = VMStateStr[vm.state]
         ip = getIP(vm)
         sshConn = vmuser + "@" + ip   # vmuser is global
         print("%-34s%-16s%-5s%-7s%-12s%s" %
@@ -566,7 +584,7 @@ def vmStop(args):
     return 0
 
 
-def noSSH(ip):
+def sshAccess(ip):
     if invalidIP(ip):
         return True
 
@@ -585,7 +603,7 @@ def noSSH(ip):
         return True
 
 
-def vmSSH(args, verbose=True):
+def vmSSH(args, verbose = True):
     vmName = cmd = None
     if len(args) == 2:
         (vmName, cmd) = args
@@ -608,7 +626,7 @@ def vmSSH(args, verbose=True):
     ssh += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
     ip = getIP(vm)
-    if noSSH(ip):
+    if not sshAccess(ip):
         print("VM SSH unreachable over {}:22".format(ip))
         return 1
 
@@ -625,7 +643,7 @@ def vmSSH(args, verbose=True):
     return 0
 
 
-def vmSSHCopy(source, vmName, destination, verbose=True):
+def SCPVM(source, vmName, destination, verbose = True):
     try:
         vm = vbox.findMachine(vmName)  # Get IMachine object (read-only)
     except:
@@ -639,7 +657,7 @@ def vmSSHCopy(source, vmName, destination, verbose=True):
     scp += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
     ip = getIP(vm)
-    if noSSH(ip):
+    if not sshAccess(ip):
         print("VM SSH unreachable over {}:22".format(ip))
         return 1
 
@@ -711,7 +729,7 @@ def vmInfo(args):
     fmt = "{:40}  {}"
     print(fmt.format("Name", vmName))
     print(fmt.format("ID", vm.id))
-    print(fmt.format("SessionStatus", enumElem("SessionState", vm.sessionState)))
+    print(fmt.format("SessionStatus", SessState[vm.sessionState]))
 
     storageControllers = vboxmgr.getArray(vm, 'storageControllers')
     if storageControllers:
@@ -758,12 +776,12 @@ def vmInfo(args):
             nicStatus = "Enabled"
         print(fmt.format("  eth" + str(slot), nicStatus))
         if nicStatus == "Disabled": continue
-        print(fmt.format("    Type", enumElem("NetworkAdapterType", nic.adapterType)))
-        attachType = enumElem("NetworkAttachmentType", nic.attachmentType)
+        print(fmt.format("    Type", NICType[nic.adapterType]))
+        attachType = NICattType[nic.attachmentType]
         print(fmt.format("    AttachmentType", attachType))
         print(fmt.format("    MAC", nic.MACAddress))
         print(fmt.format("    CableConnected", nic.cableConnected))
-        print(fmt.format("    PromiscuousMode", enumElem("NetworkAdapterPromiscModePolicy", nic.promiscModePolicy)))
+        print(fmt.format("    PromiscuousMode", PromiscMode[nic.promiscModePolicy]))
         if attachType == "Bridged":
             print("    %-38s%s" % ("Bridged_Interface", nic.bridgedInterface))
         elif attachType == "HostOnly":
@@ -852,7 +870,6 @@ def netType(args):
     closeSession(session)
     return 0
 
-
 def netList():
     netList = getNICList()
     if len(netList) != 0:
@@ -863,12 +880,12 @@ def netList():
             if net.DHCPEnabled:
                 dhcpStatus = 'Enabled'
             print(fmt.format(net.name, \
-                enumElem("HostNetworkInterfaceType", net.interfaceType), \
+                NICifType[net.interfaceType], \
                 # HostNetworkInterfaceType  1=Bridged, 2=HostOnly
                 dhcpStatus, \
                 net.IPAddress, \
                 net.networkMask, \
-                enumElem("HostNetworkInterfaceStatus", net.status)))
+                NICStatus[net.status]))
                 # HostNetworkInterfaceStatus 0=Unknown, 1=Up, 2=Down
     return 0
 
@@ -1002,7 +1019,7 @@ def vmProvision(args):
     # Prohibit running this command from HOME directory
     if os.getcwd() == os.environ['HOME']:
         print("Running this utility from your HOME dir is prohibited for security reasons.\n"
-              "Please work from a separate working directory.")
+            "Please work from a separate working directory.")
         return 1
 
     print("=> Provisioning VMs defined in file {}".format(vmconf))
@@ -1130,9 +1147,12 @@ def vmProvision(args):
             source = vmCopy.strip('"').split()[0]
             destination = vmCopy.strip('"').split()[1]
             timeOut = time.time() + 120
-            while timeOut > time.time() and noSSH(vmNetIp):  # Wait a bit till SSH is ready
+
+            # Wait a bit till SSH is ready
+            while timeOut > time.time() and not sshAccess(vmNetIp):
                 time.sleep(0.1)
-            vmSSHCopy(source, vmName, destination)
+
+            SCPVM(source, vmName, destination)
 
         # Run VMRUN COMMAND
         if vmRun:
@@ -1212,7 +1232,7 @@ def imgImport(args):
 
     # Copy the OVA to vmhome, where OVA image files are kept
     shutil.copy(imgFile, vmhome)
-    return 0
+    Exit(0)
 
 
 def imgCreate(args):
@@ -1255,12 +1275,11 @@ def imgCreate(args):
     print("Creating OVA image ...")
     while not progress.completed:
         time.sleep(0.2)
-    return 0
+    Exit(0)
 
 
 def imgPack():
-    print(
-        "To create a brand new OVA image from an ISO, first make sure you install\n"
+    print("To create a brand new OVA image from an ISO, first make sure you install\n"
         "'git' and 'packer', then do the following:\n\n"
         "1. git clone https://github.com/lencap/osimages\n"
         "2. Choose which Linux OS template to use, say Ubuntu, then\n"
@@ -1273,7 +1292,7 @@ def imgPack():
         "actual {} code to ensure your own images satisfy the essential requirements."
         .format(prgName, prgName, prgName)
     )
-    return 0
+    Exit(0)
 
 
 def InitGlobalObjects():
@@ -1286,22 +1305,23 @@ def InitGlobalObjects():
     vbhome  = vbox.systemProperties.defaultMachineFolder
     if int(vbox.APIVersion[0]) < 5:
         print("Fatal. Requires VirtualBox v5.0 or greater.")
-        sys.exit(1)
+        Exit(1)
 
 
-def Exit(rc=0):
+# Graceful exit, releasing all global objects
+def Exit(rc = 0):
     global vboxmgr
-    if (vboxmgr): del vboxmgr      # Release global object
+    if (vboxmgr): del vboxmgr
     sys.exit(rc)
 
 
-def main(args=None):
+def main(args = None):
     # If less than 2 arguments just print usage (exits)
     if len(sys.argv) < 2: PrintUsage()
 
     # Initialize global objects: vboxclient, box, sysprop, vbhome, and vmhome
     InitGlobalObjects()
-
+    
     # Create SSH keys on every run to ensure they're always readily available
     CreateSSHKeys()
 
