@@ -27,7 +27,7 @@ except ImportError:
     Exit(1)
 
 # Global variables
-prgVer    = "v266"
+prgVer    = "v267"
 prgName   = "vm"
 vmhome    = os.environ["HOME"] + "/.vm"    # Config directory
 vmsshpri  = vmhome + "/vmkey"              # Private SSH key file
@@ -239,7 +239,7 @@ def SetIP(vm, ip):
     for vmTmp in vbox.getMachines():
         if vmTmp.name == vm.name:
             continue   # Skip this machine itself
-        if getIP(vmTmp) == ip:
+        if GetIP(vmTmp) == ip:
             print("Error: IP '{}' is already taken by VM '{}'".format(ip, vmTmp.name))
             return False
 
@@ -316,7 +316,7 @@ def vmList():
         if len(name) > 34:
             name = name + ' '
         state = VMStateStr[vm.state]
-        ip = getIP(vm)
+        ip = GetIP(vm)
         sshConn = vmuser + "@" + ip   # vmuser is global
         print("%-34s%-16s%-5s%-7s%-12s%s" %
             (name, vm.OSTypeId, vm.CPUCount, vm.memorySize, state, sshConn))
@@ -507,7 +507,7 @@ def vmStart(args):
         return 1
 
     # Don't start VM unless IP is defined and is valid
-    ipAddr = getIP(vm)             # Get officially defined IP
+    ipAddr = GetIP(vm)             # Get officially defined IP
     if ipAddr == '<undefined>':
         print("IP address is '<undefined>'")
         return 1
@@ -648,7 +648,7 @@ def vmSSH(args, verbose = True):
     ssh = "ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
     ssh += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
-    ip = getIP(vm)
+    ip = GetIP(vm)
     if not SSHPortOpen(ip):
         print("VM SSH unreachable over {}:22".format(ip))
         return 1
@@ -679,7 +679,7 @@ def SCPVM(source, vmName, destination, verbose = True):
     scp = "scp -o ConnectTimeout=2 -o StrictHostKeyChecking=no"
     scp += " -o UserKnownHostsFile=/dev/null -i " + vmsshpri
 
-    ip = getIP(vm)
+    ip = GetIP(vm)
     if not SSHPortOpen(ip):
         print("VM SSH unreachable over {}:22".format(ip))
         return 1
@@ -1125,12 +1125,12 @@ def vmProvision(args):
         sameConfig = True
 
         # IP Address
-        currentVmNetIp = getIP(vm)
+        currentVmNetIp = GetIP(vm)
         if currentVmNetIp != vmNetIp:
             for vmTmp in vbox.getMachines():   # Check if proposed IP is already taken
                 if vmTmp.name == vm.name:
                     continue   # Skip this machine itself
-                if getIP(vmTmp) == vmNetIp:
+                if GetIP(vmTmp) == vmNetIp:
                     print("[{}] IP '{}' is already taken by VM '{}'".format(vmName, vmNetIp, vmTmp.name))
                     return 1
             sameConfig = False
