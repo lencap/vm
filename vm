@@ -9,6 +9,7 @@
 # Allow multiple vmcopy and vmrun
 # Don't mess with VMs that were not created by this program
 # Don't allow creation of HO net with any existing host net
+# Combine vmmod and vmip
 # Switch to python3 when VirtualBox supports it
 
 import os
@@ -24,10 +25,10 @@ try:
     from vboxapi import VirtualBoxManager
 except ImportError:
     print("Missing 'vboxapi' module. Is VirtualBox installed?")
-    Exit(1)
+    sys.exit(1)
 
 # Global variables
-prgVer    = "v267"
+prgVer    = "v268"
 prgName   = "vm"
 vmhome    = os.environ["HOME"] + "/.vm"    # Config directory
 vmsshpri  = vmhome + "/vmkey"              # Private SSH key file
@@ -80,7 +81,7 @@ def PrintUsage():
         "%s stop      <vmName> [f]                 Stop VM. Force option\n"
         "%s ssh       <vmName> [<command>]         SSH into or optionally run command on VM\n"
         "%s prov      [<vmConf>|c]                 Provision VMs in given vmConf file; Create skeleton file option\n"
-        "%s info      <vmName>                     Dump subset of all VM details for common troubleshooting\n"
+        "%s info      <vmName>                     Dump extended VM details\n"
         "%s mod       <vmName> <cpus> [<mem>]      Modify VM CPUs and memory. Memory defaults to 1024\n"
         "%s ip        <vmName> <ip>                Set VM IP address\n"
         "%s imglist                                List all available images\n"
@@ -467,7 +468,7 @@ def vmCreate(args):
     # Get a write lock session on the VM and ensure disk1 is the only bootable device
     (vmMuta, session) = OpenSession(vm, const.LockType_Write)
     vmMuta.setBootOrder(1, const.DeviceType_HardDisk)
-    vmMuta.setBootOrder(1, const.DeviceType_Null)
+    vmMuta.setBootOrder(2, const.DeviceType_Null)
     # We don't bother with order 3, 4 or others, since they are hardly used
 
     # Some default network settings
